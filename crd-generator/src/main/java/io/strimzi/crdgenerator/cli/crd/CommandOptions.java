@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-public class CommandOptions implements ICommandOptions {
+public class CommandOptions {
 
     private boolean yaml = false;
 
@@ -45,7 +45,7 @@ public class CommandOptions implements ICommandOptions {
 
     @SuppressWarnings({ "unchecked", "CyclomaticComplexity", "JavaNCSS", "MethodLength" })
     public CommandOptions(String[] args) throws ClassNotFoundException, IOException, IllegalStateException {
-        
+
         String conversionServiceUrl = null;
         String conversionServiceName = null;
         String conversionServiceNamespace = null;
@@ -230,61 +230,52 @@ public class CommandOptions implements ICommandOptions {
         }
     }
 
-    static void argParseErr(String s) {
+
+    void argParseErr(String s) {
         System.err.println("CrdGenerator: error: " + s);
     }
 
 
-
-    @Override
     public boolean isYaml() {
         return yaml;
     }
 
 
-    @Override
     public LinkedHashMap<String, String> getLabels() {
         return labels;
     }
 
 
-    @Override
     public VersionRange<KubeVersion> getTargetKubeVersions() {
         return targetKubeVersions;
     }
 
 
-    @Override
     public ApiVersion getCrdApiVersion() {
         return crdApiVersion;
     }
 
 
-    @Override
     public List<ApiVersion> getApiVersions() {
         return apiVersions;
     }
 
 
-    @Override
     public VersionRange<ApiVersion> getDescribeVersions() {
         return describeVersions;
     }
 
 
-    @Override
     public ApiVersion getStorageVersion() {
         return storageVersion;
     }
 
 
-    @Override
     public Map<String, Class<? extends CustomResource<?, ?>>> getClasses() {
         return classes;
     }
 
 
-    @Override
     public ConversionStrategy getConversionStrategy() {
         return conversionStrategy;
     }
