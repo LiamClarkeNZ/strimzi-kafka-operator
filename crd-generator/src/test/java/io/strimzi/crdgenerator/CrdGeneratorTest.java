@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class CrdGeneratorTest {
+
     @Test
     public void simpleTest() throws IOException {
         CrdGenerator crdGenerator = new CrdGenerator(KubeVersion.V1_11_PLUS, ApiVersion.V1BETA1);

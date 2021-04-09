@@ -15,11 +15,8 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -58,13 +55,13 @@ import io.strimzi.crdgenerator.annotations.MinimumItems;
 import io.strimzi.crdgenerator.annotations.OneOf;
 import io.strimzi.crdgenerator.annotations.Pattern;
 import io.strimzi.crdgenerator.annotations.Type;
+import io.strimzi.crdgenerator.cli.crd.CommandOptions;
 
 import static io.strimzi.api.annotations.ApiVersion.V1;
 import static io.strimzi.crdgenerator.Property.hasAnyGetterAndAnySetter;
 import static io.strimzi.crdgenerator.Property.properties;
 import static io.strimzi.crdgenerator.Property.sortedProperties;
 import static io.strimzi.crdgenerator.Property.subtypes;
-import static java.lang.Integer.parseInt;
 import static java.lang.reflect.Modifier.isAbstract;
 import static java.util.Arrays.asList;
 import static java.util.Collections.emptyList;
@@ -167,7 +164,7 @@ import static java.util.Collections.emptyMap;
 public class CrdGenerator {
     public static final YAMLMapper YAML_MAPPER = new YAMLMapper()
             .configure(YAMLGenerator.Feature.WRITE_DOC_START_MARKER, false);
-    public static final ObjectMapper JSON_MATTER = new ObjectMapper();
+    public static final ObjectMapper JSON_MAPPER = new ObjectMapper();
     private final ApiVersion crdApiVersion;
     private final List<ApiVersion> generateVersions;
     private final ApiVersion storageVersion;
@@ -194,15 +191,12 @@ public class CrdGenerator {
         }
     }
 
-    Reporter reporter = new DefaultReporter();
+    Reporter reporter;
 
     public void warn(String s) {
         reporter.warn(s);
     }
 
-    public static void argParseErr(String s) {
-        System.err.println("CrdGenerator: error: " + s);
-    }
 
     public void err(String s) {
         reporter.err(s);
@@ -307,7 +301,7 @@ public class CrdGenerator {
         this.conversionStrategy = conversionStrategy;
     }
 
-    public int generate(Class<? extends CustomResource> crdClass, Writer out) throws IOException {
+    public <T extends CustomResource<?, ?>> int  generate(Class<T> crdClass, Writer out) throws IOException {
         ObjectNode node = nf.objectNode();
         Crd crd = crdClass.getAnnotation(Crd.class);
         if (crd == null) {
@@ -341,7 +335,7 @@ public class CrdGenerator {
 
     @SuppressWarnings("NPathComplexity")
     private ObjectNode buildSpec(ApiVersion crdApiVersion,
-                                 Crd.Spec crd, Class<? extends CustomResource> crdClass) {
+                                 Crd.Spec crd, Class<? extends CustomResource<?, ?>> crdClass) {
         checkKubeVersionsSupportCrdVersion(crdApiVersion);
         ObjectNode result = nf.objectNode();
         result.put("group", crd.group());
@@ -411,9 +405,11 @@ public class CrdGenerator {
         if (crdApiVersion.compareTo(V1) < 0
                 && targetKubeVersions.intersects(KubeVersion.parseRange("1.11-1.15"))) {
             result.put("version", Arrays.stream(crd.versions())
-                    .map(v -> ApiVersion.parse(v.name()))
-                    .filter(this::shouldIncludeVersion)
-                    .findFirst().map(v -> v.toString()).get());
+                                        .map(v -> ApiVersion.parse(v.name()))
+                                        .filter(this::shouldIncludeVersion)
+                                        .findFirst()
+                                        .map(ApiVersion::toString)
+                                        .get());
         }
 
         if (!perVersionSchemas) {
@@ -450,7 +446,7 @@ public class CrdGenerator {
         return conversion;
     }
 
-    private Map<ApiVersion, ObjectNode> buildSchemas(Crd.Spec crd, Class<? extends CustomResource> crdClass) {
+    private Map<ApiVersion, ObjectNode> buildSchemas(Crd.Spec crd, Class<? extends CustomResource<?, ?>> crdClass) {
         return Arrays.stream(crd.versions())
             .map(version -> ApiVersion.parse(version.name()))
             .filter(this::shouldIncludeVersion)
@@ -629,19 +625,19 @@ public class CrdGenerator {
         return result;
     }
 
-    private ObjectNode buildValidation(Class<? extends CustomResource> crdClass, ApiVersion crApiVersion, boolean description) {
+    private ObjectNode buildValidation(Class<? extends CustomResource<?, ?>> crdClass, ApiVersion crApiVersion, boolean description) {
         ObjectNode result = nf.objectNode();
         // OpenShift Origin 3.10-rc0 doesn't like the `type: object` in schema root
         boolean noTopLevelTypeProperty = targetKubeVersions.intersects(KubeVersion.parseRange("1.11-1.15"));
-        result.set("openAPIV3Schema", buildObjectSchema(crApiVersion, crdClass, crdClass, crdApiVersion.compareTo(V1) >= 0 || !noTopLevelTypeProperty, description));
+        result.set("openAPIV3Schema", buildObjectSchema(crApiVersion, crdClass, crdApiVersion.compareTo(V1) >= 0 || !noTopLevelTypeProperty, description));
         return result;
     }
 
-    private ObjectNode buildObjectSchema(ApiVersion crApiVersion, AnnotatedElement annotatedElement, Class<?> crdClass, boolean description) {
-        return buildObjectSchema(crApiVersion, annotatedElement, crdClass, true, description);
+    private ObjectNode buildObjectSchema(ApiVersion crApiVersion, Class<?> crdClass, boolean description) {
+        return buildObjectSchema(crApiVersion, crdClass, true, description);
     }
 
-    private ObjectNode buildObjectSchema(ApiVersion crApiVersion, AnnotatedElement annotatedElement, Class<?> crdClass, boolean printType, boolean description) {
+    private ObjectNode buildObjectSchema(ApiVersion crApiVersion, Class<?> crdClass, boolean printType, boolean description) {
         ObjectNode result = nf.objectNode();
         buildObjectSchema(crApiVersion, result, crdClass, printType, description);
         return result;
@@ -703,7 +699,7 @@ public class CrdGenerator {
         if (!Modifier.isAbstract(crdClass.getModifiers())) {
             hasAnyGetterAndAnySetter(crdClass);
         } else {
-            for (Class c : subtypes(crdClass)) {
+            for (Class<?> c : subtypes(crdClass)) {
                 hasAnyGetterAndAnySetter(c);
             }
         }
@@ -729,7 +725,7 @@ public class CrdGenerator {
         outer: do {
             if (className.equals(c.getName())) {
                 found = true;
-                break outer;
+                break;
             }
             for (Class<?> i : c.getInterfaces()) {
                 if (inherits(i, className)) {
@@ -760,7 +756,7 @@ public class CrdGenerator {
 
     private Collection<Property> unionOfSubclassProperties(ApiVersion crApiVersion, Class<?> crdClass) {
         TreeMap<String, Property> result = new TreeMap<>();
-        for (Class subtype : Property.subtypes(crdClass)) {
+        for (Class<?> subtype : Property.subtypes(crdClass)) {
             result.putAll(properties(crApiVersion, subtype));
         }
         result.putAll(properties(crApiVersion, crdClass));
@@ -836,7 +832,7 @@ public class CrdGenerator {
         } else if (returnType.isArray() || List.class.equals(returnType)) {
             schema = buildArraySchema(crApiVersion, property, property.getType(), description);
         } else {
-            schema = buildObjectSchema(crApiVersion, property, returnType, description);
+            schema = buildObjectSchema(crApiVersion, returnType, description);
         }
 
         if (description) {
@@ -875,7 +871,7 @@ public class CrdGenerator {
         return result;
     }
 
-    private ObjectNode buildBasicTypeSchema(AnnotatedElement element, Class type) {
+    private ObjectNode buildBasicTypeSchema(AnnotatedElement element, Class<?> type) {
         ObjectNode result = nf.objectNode();
 
         String typeName;
@@ -988,15 +984,12 @@ public class CrdGenerator {
                 });
     }
 
-    @SuppressWarnings("unchecked")
     private static <T> VersionRange<ApiVersion> apiVersion(T element, Class<T> annotationClass) {
         try {
             Method apiVersionsMethod = annotationClass.getDeclaredMethod("apiVersions");
             String apiVersions = (String) apiVersionsMethod.invoke(element);
             return ApiVersion.parseRange(apiVersions);
-        } catch (ReflectiveOperationException e) {
-            throw new RuntimeException(e);
-        } catch (ClassCastException e) {
+        } catch (ReflectiveOperationException | ClassCastException e) {
             throw new RuntimeException(e);
         }
     }
@@ -1007,7 +1000,7 @@ public class CrdGenerator {
         return arrayNode;
     }
 
-    private String typeName(Class type) {
+    private String typeName(Class<?> type) {
         if (String.class.equals(type)) {
             return "string";
         } else if (int.class.equals(type)
@@ -1040,185 +1033,15 @@ public class CrdGenerator {
         return arrayNode;
     }
 
-    static class CommandOptions {
-        private boolean yaml = false;
-        private LinkedHashMap<String, String> labels = new LinkedHashMap<>();
-        VersionRange<KubeVersion> targetKubeVersions = null;
-        ApiVersion crdApiVersion = null;
-        List<ApiVersion> apiVersions = null;
-        VersionRange<ApiVersion> describeVersions = null;
-        ApiVersion storageVersion = null;
-        Map<String, Class<? extends CustomResource>> classes = new HashMap<>();
-        private final ConversionStrategy conversionStrategy;
-
-        @SuppressWarnings({"unchecked", "CyclomaticComplexity", "JavaNCSS", "MethodLength"})
-        public CommandOptions(String[] args) throws ClassNotFoundException, IOException {
-            String conversionServiceUrl = null;
-            String conversionServiceName = null;
-            String conversionServiceNamespace = null;
-            String conversionServicePath = null;
-            int conversionServicePort = -1;
-            String conversionServiceCaBundle = null;
-            for (int i = 0; i < args.length; i++) {
-                String arg = args[i];
-                if (arg.startsWith("--")) {
-                    switch (arg) {
-                        case "--yaml":
-                            yaml = true;
-                            break;
-                        case "--label":
-                            i++;
-                            int index = args[i].indexOf(":");
-                            if (index == -1) {
-                                argParseErr("Invalid --label " + args[i]);
-                            }
-                            labels.put(args[i].substring(0, index), args[i].substring(index + 1));
-                            break;
-                        case "--target-kube":
-                            if (targetKubeVersions != null) {
-                                argParseErr("--target-kube can only be specified once");
-                            } else if (i >= arg.length() - 1) {
-                                argParseErr("--target-kube needs an argument");
-                            } else {
-                                targetKubeVersions = KubeVersion.parseRange(args[++i]);
-                            }
-                            break;
-                        case "--crd-api-version":
-                            if (crdApiVersion != null) {
-                                argParseErr("--crd-api-version can only be specified once");
-                            } else if (i >= arg.length() - 1) {
-                                argParseErr("--crd-api-version needs an argument");
-                            } else {
-                                crdApiVersion = ApiVersion.parse(args[++i]);
-                            }
-                            break;
-                        case "--api-versions":
-                            if (apiVersions != null) {
-                                argParseErr("--api-versions can only be specified once");
-                            } else if (i >= arg.length() - 1) {
-                                argParseErr("--api-versions needs an argument");
-                            } else {
-                                apiVersions = Arrays.stream(args[++i].split(",")).map(v -> ApiVersion.parse(v)).collect(Collectors.toList());
-                            }
-                            break;
-                        case "--describe-api-versions":
-                            if (describeVersions != null) {
-                                argParseErr("--describe-api-versions can only be specified once");
-                            } else if (i >= arg.length() - 1) {
-                                argParseErr("--describe-api-versions needs an argument");
-                            } else {
-                                describeVersions = ApiVersion.parseRange(args[++i]);
-                            }
-                            break;
-                        case "--storage-version":
-                            if (storageVersion != null) {
-                                argParseErr("--storage-version can only be specified once");
-                            } else if (i >= arg.length() - 1) {
-                                argParseErr("--storage-version needs an argument");
-                            } else {
-                                storageVersion = ApiVersion.parse(args[++i]);
-                            }
-                            break;
-                        case "--conversion-service-url":
-                            if (conversionServiceUrl != null) {
-                                argParseErr("--conversion-service-url can only be specified once");
-                            } else if (i >= arg.length() - 1) {
-                                argParseErr("--conversion-service-url needs an argument");
-                            } else {
-                                conversionServiceUrl = args[++i];
-                            }
-                            break;
-                        case "--conversion-service-name":
-                            if (conversionServiceName != null) {
-                                argParseErr("--conversion-service-name can only be specified once");
-                            } else if (i >= arg.length() - 1) {
-                                argParseErr("--conversion-service-name needs an argument");
-                            } else {
-                                conversionServiceName = args[++i];
-                            }
-                            break;
-                        case "--conversion-service-namespace":
-                            if (conversionServiceNamespace != null) {
-                                argParseErr("--conversion-service-namespace can only be specified once");
-                            } else if (i >= arg.length() - 1) {
-                                argParseErr("--conversion-service-namespace needs an argument");
-                            } else {
-                                conversionServiceNamespace = args[++i];
-                            }
-                            break;
-                        case "--conversion-service-path":
-                            if (conversionServicePath != null) {
-                                argParseErr("--conversion-service-path can only be specified once");
-                            } else if (i >= arg.length() - 1) {
-                                argParseErr("--conversion-service-path needs an argument");
-                            } else {
-                                conversionServicePath = args[++i];
-                            }
-                            break;
-                        case "--conversion-service-port":
-                            if (conversionServicePort > 0) {
-                                argParseErr("--conversion-service-port can only be specified once");
-                            } else if (i >= arg.length() - 1) {
-                                argParseErr("--conversion-service-port needs an argument");
-                            } else {
-                                conversionServicePort = parseInt(args[++i]);
-                            }
-                            break;
-                        case "--conversion-service-ca-bundle":
-                            if (conversionServiceCaBundle != null) {
-                                argParseErr("--conversion-service-ca-bundle can only be specified once");
-                            } else if (i >= arg.length() - 1) {
-                                argParseErr("--conversion-service-ca-bundle needs an argument");
-                            } else {
-                                // TODO read file and base64
-                                File file = new File(args[++i]);
-                                byte[] bundleBytes = Files.readAllBytes(file.toPath());
-                                conversionServiceCaBundle = new String(bundleBytes, StandardCharsets.UTF_8);
-                                if (!conversionServiceCaBundle.contains("-----BEGIN CERTIFICATE-----")) {
-                                    throw new IllegalStateException("File " + file + " given by --conversion-service-ca-bundle should be PEM encoded");
-                                }
-                                conversionServiceCaBundle = Base64.getEncoder().encodeToString(bundleBytes);
-                            }
-                            break;
-                        default:
-                            throw new RuntimeException("Unsupported command line option " + arg);
-                    }
-                } else {
-                    String className = arg.substring(0, arg.indexOf('='));
-                    String fileName = arg.substring(arg.indexOf('=') + 1).replace("/", File.separator);
-                    Class<?> cls = Class.forName(className);
-                    if (!CustomResource.class.equals(cls)
-                            && CustomResource.class.isAssignableFrom(cls)) {
-                        classes.put(fileName, (Class<? extends CustomResource>) cls);
-                    } else {
-                        argParseErr(cls + " is not a subclass of " + CustomResource.class.getName());
-                    }
-                }
-            }
-            if (targetKubeVersions == null) {
-                targetKubeVersions = KubeVersion.parseRange("1.11+");
-            }
-            if (crdApiVersion == null) {
-                crdApiVersion = ApiVersion.V1BETA1;
-            }
-            if (conversionServiceName != null) {
-                conversionStrategy = new WebhookConversionStrategy(conversionServiceName, conversionServiceNamespace, conversionServicePath, conversionServicePort, conversionServiceCaBundle);
-            } else if (conversionServiceUrl != null) {
-                conversionStrategy = new WebhookConversionStrategy(conversionServiceUrl, conversionServiceCaBundle);
-            } else {
-                conversionStrategy = new NoneConversionStrategy();
-            }
-        }
-    }
 
     public static void main(String[] args) throws IOException, ClassNotFoundException {
         CommandOptions opts = new CommandOptions(args);
 
-        CrdGenerator generator = new CrdGenerator(opts.targetKubeVersions, opts.crdApiVersion,
-                opts.yaml ? YAML_MAPPER.configure(YAMLGenerator.Feature.MINIMIZE_QUOTES, true) : JSON_MATTER,
-                opts.labels, new DefaultReporter(),
-                opts.apiVersions, opts.storageVersion, null, opts.conversionStrategy, opts.describeVersions);
-        for (Map.Entry<String, Class<? extends CustomResource>> entry : opts.classes.entrySet()) {
+        CrdGenerator generator = new CrdGenerator(opts.getTargetKubeVersions(), opts.getCrdApiVersion(),
+                opts.isYaml() ? YAML_MAPPER.configure(YAMLGenerator.Feature.MINIMIZE_QUOTES, true) : JSON_MAPPER,
+                opts.getLabels(), new DefaultReporter(),
+                opts.getApiVersions(), opts.getStorageVersion(), null, opts.getConversionStrategy(), opts.getDescribeVersions());
+        for (Map.Entry<String, Class<? extends CustomResource<?, ?>>> entry : opts.getClasses().entrySet()) {
             File file = new File(entry.getKey());
             if (file.getParentFile().exists()) {
                 if (!file.getParentFile().isDirectory()) {
