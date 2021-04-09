@@ -68,12 +68,20 @@ public class CommandOptions {
                         yaml = true;
                         break;
                     case "--label":
-                        i++;
-                        int index = args[i].indexOf(":");
-                        if (index == -1) {
-                            argParseErr("Invalid --label " + args[i]);
+                        if (i + 1 < args.length) {
+                            i++;
+                            int index = args[i].indexOf(":");
+                            if (index == -1 || index == args[i].length() - 1) {
+                                argParseErr("Invalid --label " + args[i]);
+                            }
+                            else {
+                                labels.put(args[i].substring(0, index), args[i].substring(index + 1));
+                            }
                         }
-                        labels.put(args[i].substring(0, index), args[i].substring(index + 1));
+                        else {
+                            argParseErr("--label needs an argument in format key:value");
+                        }
+
                         break;
                     case "--target-kube":
                         if (targetKubeVersions != null) {
@@ -240,6 +248,7 @@ public class CommandOptions {
 
 
     void argParseErr(String s) {
+        //Even though this has been refactored out of the class, keep the CrdGenerator prefix in case it's being grepped for
         errorReporter.accept("CrdGenerator: error: " + s);
     }
 
