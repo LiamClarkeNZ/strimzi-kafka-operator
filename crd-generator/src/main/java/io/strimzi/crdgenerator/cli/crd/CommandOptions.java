@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class CommandOptions {
@@ -42,9 +43,16 @@ public class CommandOptions {
 
     private final ConversionStrategy conversionStrategy;
 
+    private final Consumer<String> errorReporter;
+
+
+    public CommandOptions(String[] args) throws ClassNotFoundException, IOException, IllegalStateException {
+        this(args, System.err::println);
+    }
 
     @SuppressWarnings({ "unchecked", "CyclomaticComplexity", "JavaNCSS", "MethodLength" })
-    public CommandOptions(String[] args) throws ClassNotFoundException, IOException, IllegalStateException {
+    public CommandOptions(String[] args, Consumer<String> errorReporter) throws ClassNotFoundException, IOException, IllegalStateException {
+        this.errorReporter = errorReporter;
 
         String conversionServiceUrl = null;
         String conversionServiceName = null;
@@ -232,7 +240,7 @@ public class CommandOptions {
 
 
     void argParseErr(String s) {
-        System.err.println("CrdGenerator: error: " + s);
+        errorReporter.accept("CrdGenerator: error: " + s);
     }
 
 
