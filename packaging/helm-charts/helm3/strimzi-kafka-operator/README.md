@@ -104,6 +104,8 @@ the documentation for more details.
 | `fullReconciliationIntervalMs`       | Full reconciliation interval in milliseconds | 120000                                            |
 | `operationTimeoutMs`                 | Operation timeout in milliseconds         | 300000                                               |
 | `operatorNamespaceLabels`            | Labels of the namespace where the operator runs | `nil`                                          |
+| `podSecurityContext`                 | Cluster Operator pod's security context    | `nil`                                               |
+| `securityContext`                    | Cluster Operator container's security context |  `nil`                                           |
 | `zookeeper.image.registry  `         | ZooKeeper image registry                  | `quay.io`                                            |
 | `zookeeper.image.repository`         | ZooKeeper image repository                | `strimzi`                                            |
 | `zookeeper.image.name`               | ZooKeeper image name                      | `kafka`                                              |
@@ -177,6 +179,7 @@ the documentation for more details.
 | `labels`                             | Add labels to Operator Pod                | `{}`                                                 |
 | `nodeSelector`                       | Add a node selector to Operator Pod       | `{}`                                                 |
 | `featureGates`                       | Feature Gates configuration               | ``                                                   |
+| `labelsExclusionPattern`             | Override the exclude pattern for exclude some labels             | `""`  
 
 Specify each parameter using the `--set key=value[,key=value]` argument to `helm install`. For example,
 

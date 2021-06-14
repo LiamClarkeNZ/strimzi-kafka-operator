@@ -2431,12 +2431,14 @@ include::../api/io.strimzi.api.kafka.model.KafkaUserQuotas.adoc[leveloffset=+1]
 
 [options="header"]
 |====
-|Property                  |Description
-|consumerByteRate   1.2+<.<a|A quota on the maximum bytes per-second that each client group can fetch from a broker before the clients in the group are throttled. Defined on a per-broker basis.
+|Property                       |Description
+|consumerByteRate        1.2+<.<a|A quota on the maximum bytes per-second that each client group can fetch from a broker before the clients in the group are throttled. Defined on a per-broker basis.
 |integer
-|producerByteRate   1.2+<.<a|A quota on the maximum bytes per-second that each client group can publish to a broker before the clients in the group are throttled. Defined on a per-broker basis.
+|controllerMutationRate  1.2+<.<a|A quota on the rate at which mutations are accepted for the create topics request, the create partitions request and the delete topics request. The rate is accumulated by the number of partitions created or deleted.
+|number
+|producerByteRate        1.2+<.<a|A quota on the maximum bytes per-second that each client group can publish to a broker before the clients in the group are throttled. Defined on a per-broker basis.
 |integer
-|requestPercentage  1.2+<.<a|A quota on the maximum CPU utilization of each client group as a percentage of network and I/O threads.
+|requestPercentage       1.2+<.<a|A quota on the maximum CPU utilization of each client group as a percentage of network and I/O threads.
 |integer
 |====
 
@@ -2522,7 +2524,9 @@ include::../api/io.strimzi.api.kafka.model.KafkaMirrorMakerSpec.adoc[leveloffset
 
 
 |https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#resourcerequirements-v1-core[ResourceRequirements]
-|whitelist       1.2+<.<a|List of topics which are included for mirroring. This option allows any regular expression using Java-style regular expressions. Mirroring two topics named A and B is achieved by using the whitelist `'A\|B'`. Or, as a special case, you can mirror all topics using the whitelist '*'. You can also specify multiple regular expressions separated by commas.
+|whitelist       1.2+<.<a|*The `whitelist` property has been deprecated, and should now be configured using `spec.include`.* List of topics which are included for mirroring. This option allows any regular expression using Java-style regular expressions. Mirroring two topics named A and B is achieved by using the expression `'A\|B'`. Or, as a special case, you can mirror all topics using the regular expression '*'. You can also specify multiple regular expressions separated by commas.
+|string
+|include         1.2+<.<a|List of topics which are included for mirroring. This option allows any regular expression using Java-style regular expressions. Mirroring two topics named A and B is achieved by using the expression `'A\|B'`. Or, as a special case, you can mirror all topics using the regular expression '*'. You can also specify multiple regular expressions separated by commas.
 |string
 |jvmOptions      1.2+<.<a|JVM Options for pods.
 |xref:type-JvmOptions-{context}[`JvmOptions`]

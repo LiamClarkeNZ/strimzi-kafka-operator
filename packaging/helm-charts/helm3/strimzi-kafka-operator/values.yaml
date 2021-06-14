@@ -24,6 +24,9 @@ annotations: {}
 labels: {}
 nodeSelector: {}
 
+podSecurityContext: {}
+securityContext: {}
+
 # Docker images that operator uses to provision various components of Strimzi.  To use your own registry prefix the
 # repository name with your registry URL.
 # Ex) repository: registry.xyzcorp.com/strimzi/zookeeper
@@ -144,3 +147,5 @@ imageRepositoryOverride: ""
 # Override the docker image tag used by all Strimzi images
 imageTagOverride: ""
 createGlobalResources: true
+# Override the exclude pattern for exclude some labels
+labelsExclusionPattern: ""

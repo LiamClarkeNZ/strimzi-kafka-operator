@@ -44,6 +44,7 @@ import io.strimzi.kafka.oauth.server.ServerConfig;
 import io.strimzi.operator.cluster.KafkaVersionTestUtils;
 import io.strimzi.operator.cluster.ResourceUtils;
 import io.strimzi.operator.common.MetricsAndLogging;
+import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.model.Labels;
 import io.strimzi.test.TestUtils;
 import io.strimzi.test.annotations.ParallelSuite;
@@ -65,6 +66,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+@SuppressWarnings({"checkstyle:ClassDataAbstractionCoupling"})
 @ParallelSuite
 public class KafkaMirrorMakerClusterTest {
     private static final KafkaVersion.Lookup VERSIONS = KafkaVersionTestUtils.getKafkaVersionLookup();
@@ -87,7 +89,7 @@ public class KafkaMirrorMakerClusterTest {
     private final String consumerBootstrapServers = "source-kafka:9092";
     private final String groupId = "my-group-id";
     private final int numStreams = 2;
-    private final String whitelist = ".*";
+    private final String include = ".*";
     private final int offsetCommitInterval = 42000;
     private final boolean abortOnSendFailure = false;
     private final String kafkaHeapOpts = "-Xms" + AbstractModel.DEFAULT_JVM_XMS;
@@ -112,7 +114,7 @@ public class KafkaMirrorMakerClusterTest {
                 .withReplicas(replicas)
                 .withProducer(producer)
                 .withConsumer(consumer)
-                .withWhitelist(whitelist)
+                .withInclude(include)
             .endSpec()
             .build();
 
@@ -122,7 +124,7 @@ public class KafkaMirrorMakerClusterTest {
             .endSpec()
             .build();
 
-    private final KafkaMirrorMakerCluster mm = KafkaMirrorMakerCluster.fromCrd(resourceWithMetrics, VERSIONS);
+    private final KafkaMirrorMakerCluster mm = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resourceWithMetrics, VERSIONS);
 
     @ParallelTest
     public void testMetricsConfigMap() {
@@ -162,7 +164,7 @@ public class KafkaMirrorMakerClusterTest {
         expected.add(new EnvVarBuilder().withName(KafkaMirrorMakerCluster.ENV_VAR_KAFKA_MIRRORMAKER_METRICS_ENABLED).withValue("true").build());
         expected.add(new EnvVarBuilder().withName(KafkaMirrorMakerCluster.ENV_VAR_KAFKA_MIRRORMAKER_BOOTSTRAP_SERVERS_CONSUMER).withValue(consumerBootstrapServers).build());
         expected.add(new EnvVarBuilder().withName(KafkaMirrorMakerCluster.ENV_VAR_KAFKA_MIRRORMAKER_BOOTSTRAP_SERVERS_PRODUCER).withValue(producerBootstrapServers).build());
-        expected.add(new EnvVarBuilder().withName(KafkaMirrorMakerCluster.ENV_VAR_KAFKA_MIRRORMAKER_WHITELIST).withValue(whitelist).build());
+        expected.add(new EnvVarBuilder().withName(KafkaMirrorMakerCluster.ENV_VAR_KAFKA_MIRRORMAKER_INCLUDE).withValue(include).build());
         expected.add(new EnvVarBuilder().withName(KafkaMirrorMakerCluster.ENV_VAR_KAFKA_MIRRORMAKER_GROUPID_CONSUMER).withValue(groupId).build());
         expected.add(new EnvVarBuilder().withName(KafkaMirrorMakerCluster.ENV_VAR_KAFKA_MIRRORMAKER_NUMSTREAMS).withValue(Integer.toString(numStreams)).build());
         expected.add(new EnvVarBuilder().withName(KafkaMirrorMakerCluster.ENV_VAR_KAFKA_MIRRORMAKER_OFFSET_COMMIT_INTERVAL).withValue(Integer.toString(offsetCommitInterval)).build());
@@ -191,12 +193,13 @@ public class KafkaMirrorMakerClusterTest {
                     .withReplicas(replicas)
                     .withProducer(producer)
                     .withConsumer(consumer)
+                    .withInclude(".*")
                 .endSpec()
                 .build();
-        KafkaMirrorMakerCluster mm = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mm = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         assertThat(mm.image, is(KafkaVersionTestUtils.DEFAULT_KAFKA_MIRROR_MAKER_IMAGE));
-        assertThat(new KafkaMirrorMakerConsumerConfiguration(mm.consumer.getConfig().entrySet()).getConfiguration(), is(defaultConsumerConfiguration));
-        assertThat(new KafkaMirrorMakerProducerConfiguration(mm.producer.getConfig().entrySet()).getConfiguration(), is(defaultProducerConfiguration));
+        assertThat(new KafkaMirrorMakerConsumerConfiguration(Reconciliation.DUMMY_RECONCILIATION, mm.consumer.getConfig().entrySet()).getConfiguration(), is(defaultConsumerConfiguration));
+        assertThat(new KafkaMirrorMakerProducerConfiguration(Reconciliation.DUMMY_RECONCILIATION, mm.producer.getConfig().entrySet()).getConfiguration(), is(defaultProducerConfiguration));
     }
 
     @ParallelTest
@@ -205,8 +208,41 @@ public class KafkaMirrorMakerClusterTest {
         assertThat(mm.getImage(), is(image));
         assertThat(mm.consumer.getBootstrapServers(), is(consumerBootstrapServers));
         assertThat(mm.producer.getBootstrapServers(), is(producerBootstrapServers));
-        assertThat(mm.getWhitelist(), is(whitelist));
+        assertThat(mm.getInclude(), is(include));
         assertThat(mm.consumer.getGroupId(), is(groupId));
+    }
+
+    // Tests handling of the new include field and the deprecated whitelist field
+    @ParallelTest
+    public void testIncludeHandling() {
+        KafkaMirrorMaker both = new KafkaMirrorMakerBuilder(resource)
+                .editSpec()
+                    .withInclude(include)
+                    .withWhitelist("alternative.*")
+                .endSpec()
+                .build();
+        KafkaMirrorMakerCluster cluster = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, both, VERSIONS);
+
+        assertThat(cluster.getInclude(), is(include));
+
+        KafkaMirrorMaker legacy = new KafkaMirrorMakerBuilder(resource)
+                .editSpec()
+                    .withWhitelist("alternative.*")
+                    .withInclude(null)
+                .endSpec()
+                .build();
+        cluster = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, legacy, VERSIONS);
+
+        assertThat(cluster.getInclude(), is("alternative.*"));
+
+        KafkaMirrorMaker none = new KafkaMirrorMakerBuilder(resource)
+                .editSpec()
+                    .withWhitelist(null)
+                    .withInclude(null)
+                .endSpec()
+                .build();
+
+        assertThrows(InvalidResourceException.class, () -> KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, none, VERSIONS));
     }
 
     @ParallelTest
@@ -256,7 +292,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endProducer()
                 .endSpec()
                 .build();
-        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         Deployment dep = kc.generateDeployment(emptyMap(), true, null, null);
 
         assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().get(2).getName(), is("my-secret-p"));
@@ -314,7 +350,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endProducer()
                 .endSpec()
                 .build();
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         Deployment dep = mmc.generateDeployment(emptyMap(), true, null, null);
 
         assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().get(5).getName(), is("user-secret-c"));
@@ -366,7 +402,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endProducer()
                 .endSpec()
                 .build();
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         Deployment dep = mmc.generateDeployment(emptyMap(), true, null, null);
 
         assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().size(), is(4));
@@ -399,7 +435,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endConsumer()
                 .endSpec()
                 .build();
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         Deployment dep = mmc.generateDeployment(emptyMap(), true, null, null);
 
         assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().get(2).getName(), is("producer-secret"));
@@ -446,7 +482,7 @@ public class KafkaMirrorMakerClusterTest {
                     .endConsumer()
                 .endSpec()
                 .build();
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         Deployment dep = mmc.generateDeployment(emptyMap(), true, null, null);
 
         assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().get(2).getName(), is("producer-secret"));
@@ -536,7 +572,7 @@ public class KafkaMirrorMakerClusterTest {
                     .endTemplate()
                 .endSpec()
                 .build();
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
 
         // Check Deployment
         Deployment dep = mmc.generateDeployment(emptyMap(), true, null, null);
@@ -575,7 +611,7 @@ public class KafkaMirrorMakerClusterTest {
                     .endTemplate()
                 .endSpec()
                 .build();
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
 
         Deployment dep = mmc.generateDeployment(emptyMap(), true, null, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getTerminationGracePeriodSeconds(), is(Long.valueOf(123)));
@@ -584,7 +620,7 @@ public class KafkaMirrorMakerClusterTest {
     @ParallelTest
     public void testDefaultGracePeriod() {
         KafkaMirrorMaker resource = new KafkaMirrorMakerBuilder(this.resource).build();
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
 
         Deployment dep = mmc.generateDeployment(emptyMap(), true, null, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getTerminationGracePeriodSeconds(), is(Long.valueOf(30)));
@@ -604,7 +640,7 @@ public class KafkaMirrorMakerClusterTest {
                     .endTemplate()
                 .endSpec()
                 .build();
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
 
         Deployment dep = mmc.generateDeployment(emptyMap(), true, null, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getImagePullSecrets().size(), is(2));
@@ -621,7 +657,7 @@ public class KafkaMirrorMakerClusterTest {
         secrets.add(secret1);
         secrets.add(secret2);
 
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(this.resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, this.resource, VERSIONS);
 
         Deployment dep = mmc.generateDeployment(emptyMap(), true, null, secrets);
         assertThat(dep.getSpec().getTemplate().getSpec().getImagePullSecrets().size(), is(2));
@@ -643,7 +679,7 @@ public class KafkaMirrorMakerClusterTest {
                     .endTemplate()
                 .endSpec()
                 .build();
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
 
         Deployment dep = mmc.generateDeployment(emptyMap(), true, null, singletonList(secret1));
         assertThat(dep.getSpec().getTemplate().getSpec().getImagePullSecrets().size(), is(1));
@@ -654,7 +690,7 @@ public class KafkaMirrorMakerClusterTest {
     @ParallelTest
     public void testDefaultImagePullSecrets() {
         KafkaMirrorMaker resource = new KafkaMirrorMakerBuilder(this.resource).build();
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
 
         Deployment dep = mmc.generateDeployment(emptyMap(), true, null, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getImagePullSecrets(), is(nullValue()));
@@ -671,7 +707,7 @@ public class KafkaMirrorMakerClusterTest {
                     .endTemplate()
                 .endSpec()
                 .build();
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
 
         Deployment dep = mmc.generateDeployment(emptyMap(), true, null, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getSecurityContext(), is(notNullValue()));
@@ -683,7 +719,7 @@ public class KafkaMirrorMakerClusterTest {
     @ParallelTest
     public void testDefaultSecurityContext() {
         KafkaMirrorMaker resource = new KafkaMirrorMakerBuilder(this.resource).build();
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
 
         Deployment dep = mmc.generateDeployment(emptyMap(), true, null, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getSecurityContext(), is(nullValue()));
@@ -700,7 +736,7 @@ public class KafkaMirrorMakerClusterTest {
                     .endTemplate()
                 .endSpec()
                 .build();
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
 
         PodDisruptionBudget pdb = mmc.generatePodDisruptionBudget();
         assertThat(pdb.getSpec().getMaxUnavailable(), is(new IntOrString(2)));
@@ -709,7 +745,7 @@ public class KafkaMirrorMakerClusterTest {
     @ParallelTest
     public void testDefaultPodDisruptionBudget() {
         KafkaMirrorMaker resource = new KafkaMirrorMakerBuilder(this.resource).build();
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
 
         PodDisruptionBudget pdb = mmc.generatePodDisruptionBudget();
         assertThat(pdb.getSpec().getMaxUnavailable(), is(new IntOrString(1)));
@@ -717,7 +753,7 @@ public class KafkaMirrorMakerClusterTest {
 
     @ParallelTest
     public void testImagePullPolicy() {
-        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
 
         Deployment dep = kc.generateDeployment(Collections.EMPTY_MAP, true, ImagePullPolicy.ALWAYS, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(0).getImagePullPolicy(), is(ImagePullPolicy.ALWAYS.toString()));
@@ -741,7 +777,7 @@ public class KafkaMirrorMakerClusterTest {
                     .withResources(new ResourceRequirementsBuilder().withLimits(limits).withRequests(requests).build())
                 .endSpec()
                 .build();
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
 
         Deployment dep = mmc.generateDeployment(emptyMap(), true, null, null);
         Container cont = dep.getSpec().getTemplate().getSpec().getContainers().get(0);
@@ -764,7 +800,7 @@ public class KafkaMirrorMakerClusterTest {
                     .endJvmOptions()
                 .endSpec()
                 .build();
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
 
         Deployment dep = mmc.generateDeployment(Collections.EMPTY_MAP, true, null, null);
         Container cont = dep.getSpec().getTemplate().getSpec().getContainers().get(0);
@@ -776,7 +812,7 @@ public class KafkaMirrorMakerClusterTest {
 
     @ParallelTest
     public void testDefaultProbes() {
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(this.resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, this.resource, VERSIONS);
 
         Deployment dep = mmc.generateDeployment(Collections.EMPTY_MAP, true, null, null);
         Container cont = dep.getSpec().getTemplate().getSpec().getContainers().get(0);
@@ -814,7 +850,7 @@ public class KafkaMirrorMakerClusterTest {
                     .endReadinessProbe()
                 .endSpec()
                 .build();
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
 
         Deployment dep = mmc.generateDeployment(Collections.EMPTY_MAP, true, null, null);
         Container cont = dep.getSpec().getTemplate().getSpec().getContainers().get(0);
@@ -866,7 +902,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-        List<EnvVar> kafkaEnvVars = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS).getEnvVars();
+        List<EnvVar> kafkaEnvVars = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS).getEnvVars();
 
         assertThat("Failed to correctly set container environment variable: " + testEnvOneKey,
                 kafkaEnvVars.stream().filter(env -> testEnvOneKey.equals(env.getName()))
@@ -885,7 +921,7 @@ public class KafkaMirrorMakerClusterTest {
         envVar1.setValue(testEnvOneValue);
 
         ContainerEnvVar envVar2 = new ContainerEnvVar();
-        String testEnvTwoKey = KafkaMirrorMakerCluster.ENV_VAR_KAFKA_MIRRORMAKER_WHITELIST;
+        String testEnvTwoKey = KafkaMirrorMakerCluster.ENV_VAR_KAFKA_MIRRORMAKER_INCLUDE;
         String testEnvTwoValue = "test.env.two";
         envVar2.setName(testEnvTwoKey);
         envVar2.setValue(testEnvTwoValue);
@@ -904,7 +940,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-        List<EnvVar> kafkaEnvVars = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS).getEnvVars();
+        List<EnvVar> kafkaEnvVars = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS).getEnvVars();
 
         assertThat("Failed to prevent over writing existing container environment variable: " + testEnvOneKey,
                 kafkaEnvVars.stream().filter(env -> testEnvOneKey.equals(env.getName()))
@@ -922,7 +958,7 @@ public class KafkaMirrorMakerClusterTest {
                     .endJaegerTracing()
                 .endSpec()
                 .build();
-        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster mmc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
 
         Deployment dep = mmc.generateDeployment(Collections.EMPTY_MAP, true, null, null);
         Container cont = dep.getSpec().getTemplate().getSpec().getContainers().get(0);
@@ -947,7 +983,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         Deployment dep = kc.generateDeployment(emptyMap(), true, null, null);
         Container cont = dep.getSpec().getTemplate().getSpec().getContainers().get(0);
 
@@ -975,7 +1011,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         Deployment dep = kc.generateDeployment(emptyMap(), true, null, null);
         Container cont = dep.getSpec().getTemplate().getSpec().getContainers().get(0);
 
@@ -1004,7 +1040,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         Deployment dep = kc.generateDeployment(emptyMap(), true, null, null);
         Container cont = dep.getSpec().getTemplate().getSpec().getContainers().get(0);
 
@@ -1030,7 +1066,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-            KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+            KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         });
     }
 
@@ -1052,7 +1088,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-            KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+            KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         });
     }
 
@@ -1091,7 +1127,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         Deployment dep = kc.generateDeployment(emptyMap(), true, null, null);
         Container cont = dep.getSpec().getTemplate().getSpec().getContainers().get(0);
 
@@ -1136,7 +1172,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         Deployment dep = kc.generateDeployment(emptyMap(), true, null, null);
         Container cont = dep.getSpec().getTemplate().getSpec().getContainers().get(0);
 
@@ -1164,7 +1200,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         Deployment dep = kc.generateDeployment(emptyMap(), true, null, null);
         Container cont = dep.getSpec().getTemplate().getSpec().getContainers().get(0);
 
@@ -1193,7 +1229,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         Deployment dep = kc.generateDeployment(emptyMap(), true, null, null);
         Container cont = dep.getSpec().getTemplate().getSpec().getContainers().get(0);
 
@@ -1219,7 +1255,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-            KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+            KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         });
     }
 
@@ -1241,7 +1277,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-            KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+            KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         });
     }
 
@@ -1280,7 +1316,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         Deployment dep = kc.generateDeployment(emptyMap(), true, null, null);
         Container cont = dep.getSpec().getTemplate().getSpec().getContainers().get(0);
 
@@ -1357,7 +1393,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         Deployment dep = kc.generateDeployment(emptyMap(), true, null, null);
         Container cont = dep.getSpec().getTemplate().getSpec().getContainers().get(0);
 
@@ -1440,7 +1476,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(resource, VERSIONS);
+        KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS);
         Deployment dep = kc.generateDeployment(emptyMap(), true, null, null);
         Container cont = dep.getSpec().getTemplate().getSpec().getContainers().get(0);
 
@@ -1471,7 +1507,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-        KafkaMirrorMakerCluster kmm = KafkaMirrorMakerCluster.fromCrd(mirrorMaker, VERSIONS);
+        KafkaMirrorMakerCluster kmm = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, mirrorMaker, VERSIONS);
 
         assertThat(kmm.isMetricsEnabled(), is(true));
         assertThat(kmm.getMetricsConfigInCm(), is(metrics));
@@ -1479,7 +1515,7 @@ public class KafkaMirrorMakerClusterTest {
 
     @ParallelTest
     public void testMetricsParsingNoMetrics() {
-        KafkaMirrorMakerCluster kmm = KafkaMirrorMakerCluster.fromCrd(this.resource, VERSIONS);
+        KafkaMirrorMakerCluster kmm = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, this.resource, VERSIONS);
 
         assertThat(kmm.isMetricsEnabled(), is(false));
         assertThat(kmm.getMetricsConfigInCm(), is(nullValue()));

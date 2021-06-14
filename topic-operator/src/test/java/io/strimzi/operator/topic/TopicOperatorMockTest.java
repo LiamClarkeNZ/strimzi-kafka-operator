@@ -4,14 +4,13 @@
  */
 package io.strimzi.operator.topic;
 
-import io.debezium.kafka.KafkaCluster;
-import io.debezium.kafka.ZookeeperServer;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.micrometer.prometheus.PrometheusMeterRegistry;
 import io.strimzi.api.kafka.Crds;
 import io.strimzi.api.kafka.KafkaTopicList;
 import io.strimzi.api.kafka.model.KafkaTopic;
 import io.strimzi.api.kafka.model.KafkaTopicBuilder;
+import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.model.Labels;
 import io.strimzi.test.mockkube.MockKube;
 import io.vertx.core.Future;
@@ -26,6 +25,7 @@ import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.Config;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.streams.integration.utils.EmbeddedKafkaCluster;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.AfterAll;
@@ -35,8 +35,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
-import java.lang.reflect.Field;
-import java.nio.file.Files;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -54,12 +53,11 @@ import static org.hamcrest.Matchers.nullValue;
 
 @ExtendWith(VertxExtension.class)
 public class TopicOperatorMockTest {
-
     private static final Logger LOGGER = LogManager.getLogger(TopicOperatorMockTest.class);
+    private static EmbeddedKafkaCluster cluster;
 
     private KubernetesClient kubeClient;
     private Session session;
-    private KafkaCluster kafkaCluster;
     private static Vertx vertx;
     private String deploymentId;
     private AdminClient adminClient;
@@ -71,12 +69,15 @@ public class TopicOperatorMockTest {
     // TODO this is all in common with TOIT, so factor out a common base class
 
     @BeforeAll
-    public static void before() {
+    public static void before() throws IOException {
         VertxOptions options = new VertxOptions().setMetricsOptions(
                 new MicrometerMetricsOptions()
                         .setPrometheusOptions(new VertxPrometheusOptions().setEnabled(true))
                         .setEnabled(true));
         vertx = Vertx.vertx(options);
+
+        cluster = new EmbeddedKafkaCluster(1);
+        cluster.start();
     }
 
     @AfterAll
@@ -95,20 +96,13 @@ public class TopicOperatorMockTest {
                         KafkaTopic.class, KafkaTopicList.class, KafkaTopic::getStatus, KafkaTopic::setStatus);
         kubeClient = mockKube.build();
 
-        kafkaCluster = new KafkaCluster();
-        kafkaCluster.addBrokers(1);
-        kafkaCluster.deleteDataPriorToStartup(true);
-        kafkaCluster.deleteDataUponShutdown(true);
-        kafkaCluster.usingDirectory(Files.createTempDirectory("operator-integration-test").toFile());
-        kafkaCluster.startup();
-
         Properties p = new Properties();
-        p.setProperty(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaCluster.brokerList());
+        p.setProperty(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, cluster.bootstrapServers());
         adminClient = AdminClient.create(p);
 
         Map<String, String> m = new HashMap();
-        m.put(io.strimzi.operator.topic.Config.KAFKA_BOOTSTRAP_SERVERS.key, kafkaCluster.brokerList());
-        m.put(io.strimzi.operator.topic.Config.ZOOKEEPER_CONNECT.key, "localhost:" + zkPort(kafkaCluster));
+        m.put(io.strimzi.operator.topic.Config.KAFKA_BOOTSTRAP_SERVERS.key, cluster.bootstrapServers());
+        m.put(io.strimzi.operator.topic.Config.ZOOKEEPER_CONNECT.key, cluster.zKConnectString());
         m.put(io.strimzi.operator.topic.Config.ZOOKEEPER_CONNECTION_TIMEOUT_MS.key, "30000");
         m.put(io.strimzi.operator.topic.Config.NAMESPACE.key, "myproject");
         m.put(io.strimzi.operator.topic.Config.CLIENT_ID.key, "myproject-client-id");
@@ -168,27 +162,12 @@ public class TopicOperatorMockTest {
                 if (adminClient != null) {
                     adminClient.close();
                 }
-                if (kafkaCluster != null) {
-                    kafkaCluster.shutdown();
-                    waitFor("stop kafka cluster", 1_000, 30_000, () -> !kafkaCluster.isRunning());
-                }
+
                 latch.countDown();
             });
         }
         latch.await(30, TimeUnit.SECONDS);
         context.completeNow();
-    }
-
-    private static int zkPort(KafkaCluster cluster) {
-        // TODO Method was added in DBZ-540, so no need for reflection once
-        // dependency gets upgraded
-        try {
-            Field zkServerField = KafkaCluster.class.getDeclaredField("zkServer");
-            zkServerField.setAccessible(true);
-            return ((ZookeeperServer) zkServerField.get(cluster)).getPort();
-        } catch (ReflectiveOperationException e) {
-            throw new RuntimeException(e);
-        }
     }
 
     private void createInKube(KafkaTopic topic) {
@@ -265,7 +244,7 @@ public class TopicOperatorMockTest {
     Topic getFromKafka(VertxTestContext context, String topicName) throws InterruptedException {
         AtomicReference<Topic> ref = new AtomicReference<>();
         Checkpoint async = context.checkpoint();
-        Future<TopicMetadata> kafkaMetadata = session.kafka.topicMetadata(new TopicName(topicName));
+        Future<TopicMetadata> kafkaMetadata = session.kafka.topicMetadata(Reconciliation.DUMMY_RECONCILIATION, new TopicName(topicName));
         kafkaMetadata.map(metadata -> TopicSerialization.fromTopicMetadata(metadata)).onComplete(fromKafka -> {
             if (fromKafka.succeeded()) {
                 ref.set(fromKafka.result());
