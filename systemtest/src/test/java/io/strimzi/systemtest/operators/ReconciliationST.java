@@ -6,13 +6,16 @@ package io.strimzi.systemtest.operators;
 
 import io.strimzi.api.kafka.model.KafkaConnect;
 import io.strimzi.api.kafka.model.KafkaConnectResources;
+import io.strimzi.api.kafka.model.KafkaRebalance;
 import io.strimzi.api.kafka.model.KafkaResources;
 import io.strimzi.api.kafka.model.balancing.KafkaRebalanceAnnotation;
 import io.strimzi.api.kafka.model.balancing.KafkaRebalanceState;
 import io.strimzi.operator.common.Annotations;
+import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.model.Labels;
 import io.strimzi.systemtest.AbstractST;
 import io.strimzi.systemtest.Constants;
+import io.strimzi.systemtest.SetupClusterOperator;
 import io.strimzi.systemtest.annotations.ParallelNamespaceTest;
 import io.strimzi.systemtest.enums.CustomResourceStatus;
 import io.strimzi.systemtest.resources.ResourceOperation;
@@ -20,6 +23,7 @@ import io.strimzi.systemtest.resources.crd.KafkaConnectResource;
 import io.strimzi.systemtest.resources.crd.KafkaConnectorResource;
 import io.strimzi.systemtest.resources.crd.KafkaRebalanceResource;
 import io.strimzi.systemtest.resources.crd.KafkaResource;
+import io.strimzi.systemtest.resources.crd.KafkaTopicResource;
 import io.strimzi.systemtest.templates.crd.KafkaClientsTemplates;
 import io.strimzi.systemtest.templates.crd.KafkaConnectTemplates;
 import io.strimzi.systemtest.templates.crd.KafkaConnectorTemplates;
@@ -29,6 +33,7 @@ import io.strimzi.systemtest.templates.crd.KafkaTopicTemplates;
 import io.strimzi.systemtest.utils.kafkaUtils.KafkaConnectUtils;
 import io.strimzi.systemtest.utils.kafkaUtils.KafkaConnectorUtils;
 import io.strimzi.systemtest.utils.kafkaUtils.KafkaRebalanceUtils;
+import io.strimzi.systemtest.utils.kafkaUtils.KafkaTopicUtils;
 import io.strimzi.systemtest.utils.kafkaUtils.KafkaUtils;
 import io.strimzi.systemtest.utils.kubeUtils.controllers.DeploymentUtils;
 import io.strimzi.systemtest.utils.kubeUtils.controllers.StatefulSetUtils;
@@ -133,21 +138,19 @@ public class ReconciliationST extends AbstractST {
         resourceManager.createResource(extensionContext, KafkaTemplates.kafkaWithCruiseControl(clusterName, 3, 3).build());
         resourceManager.createResource(extensionContext, KafkaTopicTemplates.topic(clusterName, topicName).build());
 
-        /* TODO: after issue with TO and pausing reconciliations in KafkaTopic will be fixed, uncomment these lines
         LOGGER.info("Adding pause annotation into KafkaTopic resource and changing replication factor");
         KafkaTopicResource.replaceTopicResource(topicName, topic -> {
             topic.getMetadata().setAnnotations(PAUSE_ANNO);
             topic.getSpec().setPartitions(SCALE_TO);
         });
 
-        KafkaTopicUtils.waitForKafkaTopicStatus(topicName, CustomResourceStatus.ReconciliationPaused);
+        KafkaTopicUtils.waitForKafkaTopicStatus(namespaceName, topicName, CustomResourceStatus.ReconciliationPaused);
         KafkaTopicUtils.waitForKafkaTopicSpecStability(topicName, KafkaResources.kafkaPodName(clusterName, 0), KafkaResources.plainBootstrapAddress(clusterName));
 
         LOGGER.info("Setting annotation to \"false\", partitions should be scaled to {}", SCALE_TO);
         KafkaTopicResource.replaceTopicResource(topicName,
             topic -> topic.getMetadata().getAnnotations().replace(Annotations.ANNO_STRIMZI_IO_PAUSE_RECONCILIATION, "true", "false"));
         KafkaTopicUtils.waitForKafkaTopicPartitionChange(topicName, SCALE_TO);
-        */
 
         resourceManager.createResource(extensionContext, KafkaRebalanceTemplates.kafkaRebalance(clusterName).build());
 
@@ -159,11 +162,11 @@ public class ReconciliationST extends AbstractST {
 
         KafkaRebalanceUtils.waitForKafkaRebalanceCustomResourceState(namespaceName, clusterName, KafkaRebalanceState.ReconciliationPaused);
 
-        KafkaRebalanceUtils.annotateKafkaRebalanceResource(namespaceName, clusterName, KafkaRebalanceAnnotation.approve);
+        KafkaRebalanceUtils.annotateKafkaRebalanceResource(new Reconciliation("test", KafkaRebalance.RESOURCE_KIND, namespaceName, clusterName), namespaceName, clusterName, KafkaRebalanceAnnotation.approve);
 
         // unfortunately we don't have any option to check, if something is changed when reconciliations are paused
         // so we will check stability of status
-        KafkaRebalanceUtils.waitForRebalanceStatusStability(namespaceName, clusterName);
+        KafkaRebalanceUtils.waitForRebalanceStatusStability(new Reconciliation("test", KafkaRebalance.RESOURCE_KIND, namespaceName, clusterName), namespaceName, clusterName);
 
         LOGGER.info("Setting annotation to \"false\" and waiting for KafkaRebalance to be in {} state", KafkaRebalanceState.Ready);
         KafkaRebalanceResource.replaceKafkaRebalanceResourceInSpecificNamespace(clusterName,
@@ -172,12 +175,18 @@ public class ReconciliationST extends AbstractST {
         KafkaRebalanceUtils.waitForKafkaRebalanceCustomResourceState(namespaceName, clusterName, KafkaRebalanceState.ProposalReady);
 
         // because approve annotation wasn't reflected, approving again
-        KafkaRebalanceUtils.annotateKafkaRebalanceResource(namespaceName, clusterName, KafkaRebalanceAnnotation.approve);
+        KafkaRebalanceUtils.annotateKafkaRebalanceResource(new Reconciliation("test", KafkaRebalance.RESOURCE_KIND, namespaceName, clusterName), namespaceName, clusterName, KafkaRebalanceAnnotation.approve);
         KafkaRebalanceUtils.waitForKafkaRebalanceCustomResourceState(namespaceName, clusterName, KafkaRebalanceState.Ready);
     }
 
     @BeforeAll
     void setup(ExtensionContext extensionContext) {
-        installClusterWideClusterOperator(extensionContext, NAMESPACE, Constants.CO_OPERATION_TIMEOUT_DEFAULT, Constants.RECONCILIATION_INTERVAL);
+        install = new SetupClusterOperator.SetupClusterOperatorBuilder()
+            .withExtensionContext(extensionContext)
+            .withNamespace(NAMESPACE)
+            .withWatchingNamespaces(Constants.WATCH_ALL_NAMESPACES)
+            .withOperationTimeout(Constants.CO_OPERATION_TIMEOUT_SHORT)
+            .createInstallation()
+            .runInstallation();
     }
 }

@@ -20,6 +20,7 @@ import io.strimzi.api.kafka.model.template.DeploymentStrategy;
 import io.strimzi.operator.common.model.Labels;
 import io.strimzi.systemtest.AbstractST;
 import io.strimzi.systemtest.Constants;
+import io.strimzi.systemtest.SetupClusterOperator;
 import io.strimzi.systemtest.annotations.ParallelNamespaceTest;
 import io.strimzi.systemtest.kafkaclients.internalClients.InternalKafkaClient;
 import io.strimzi.systemtest.resources.crd.KafkaMirrorMakerResource;
@@ -278,9 +279,9 @@ public class MirrorMakerST extends AbstractST {
                     .endTls()
                     .withNewKafkaClientAuthenticationTls()
                         .withNewCertificateAndKey()
-                            .withNewSecretName(kafkaSourceUserName)
-                            .withNewCertificate("user.crt")
-                            .withNewKey("user.key")
+                            .withSecretName(kafkaSourceUserName)
+                            .withCertificate("user.crt")
+                            .withKey("user.key")
                         .endCertificateAndKey()
                     .endKafkaClientAuthenticationTls()
                 .endConsumer()
@@ -290,9 +291,9 @@ public class MirrorMakerST extends AbstractST {
                     .endTls()
                     .withNewKafkaClientAuthenticationTls()
                         .withNewCertificateAndKey()
-                            .withNewSecretName(kafkaTargetUserName)
-                            .withNewCertificate("user.crt")
-                            .withNewKey("user.key")
+                            .withSecretName(kafkaTargetUserName)
+                            .withCertificate("user.crt")
+                            .withKey("user.key")
                         .endCertificateAndKey()
                     .endKafkaClientAuthenticationTls()
                 .endProducer()
@@ -469,14 +470,14 @@ public class MirrorMakerST extends AbstractST {
     }
 
     @ParallelNamespaceTest
-    void testWhiteList(ExtensionContext extensionContext) {
+    void testIncludeList(ExtensionContext extensionContext) {
         final String namespaceName = extensionContext.getStore(ExtensionContext.Namespace.GLOBAL).get(Constants.NAMESPACE_KEY).toString();
         String clusterName = mapWithClusterNames.get(extensionContext.getDisplayName());
         String kafkaClusterSourceName = clusterName + "-source";
         String kafkaClusterTargetName = clusterName + "-target";
 
-        String topicName = "whitelist-topic";
-        String topicNotInWhitelist = "non-whitelist-topic";
+        String topicName = "included-topic";
+        String topicNotIncluded = "not-included-topic";
 
         LOGGER.info("Creating kafka source cluster {}", kafkaClusterSourceName);
         resourceManager.createResource(extensionContext, KafkaTemplates.kafkaEphemeral(kafkaClusterSourceName, 1, 1).build());
@@ -484,7 +485,7 @@ public class MirrorMakerST extends AbstractST {
         resourceManager.createResource(extensionContext, KafkaTemplates.kafkaEphemeral(kafkaClusterTargetName, 1, 1).build());
 
         resourceManager.createResource(extensionContext, KafkaTopicTemplates.topic(kafkaClusterSourceName, topicName).build());
-        resourceManager.createResource(extensionContext, KafkaTopicTemplates.topic(kafkaClusterSourceName, topicNotInWhitelist).build());
+        resourceManager.createResource(extensionContext, KafkaTopicTemplates.topic(kafkaClusterSourceName, topicNotIncluded).build());
 
         resourceManager.createResource(extensionContext, KafkaClientsTemplates.kafkaClients(namespaceName, false, clusterName + "-" + Constants.KAFKA_CLIENTS).build());
 
@@ -515,7 +516,7 @@ public class MirrorMakerST extends AbstractST {
                 .withNamespace(namespaceName)
             .endMetadata()
             .editSpec()
-                .withNewWhitelist(topicName)
+                .withNewInclude(topicName)
             .endSpec().build());
 
         internalKafkaClient = internalKafkaClient.toBuilder()
@@ -534,7 +535,7 @@ public class MirrorMakerST extends AbstractST {
         internalKafkaClient.consumesPlainMessagesUntilOperationIsSuccessful(sent);
 
         internalKafkaClient = internalKafkaClient.toBuilder()
-            .withTopicName(topicNotInWhitelist)
+            .withTopicName(topicNotIncluded)
             .withClusterName(kafkaClusterSourceName)
             .build();
 
@@ -546,7 +547,7 @@ public class MirrorMakerST extends AbstractST {
             .withClusterName(kafkaClusterTargetName)
             .build();
 
-        assertThat("Received 0 messages in target kafka because topic " + topicNotInWhitelist + " is not in whitelist",
+        assertThat("Received 0 messages in target kafka because topic " + topicNotIncluded + " is not included",
             internalKafkaClient.receiveMessagesPlain(), is(0));
     }
 
@@ -800,6 +801,12 @@ public class MirrorMakerST extends AbstractST {
 
     @BeforeAll
     void setupEnvironment(ExtensionContext extensionContext) {
-        installClusterWideClusterOperator(extensionContext, NAMESPACE, Constants.CO_OPERATION_TIMEOUT_DEFAULT, Constants.RECONCILIATION_INTERVAL);
+        install = new SetupClusterOperator.SetupClusterOperatorBuilder()
+            .withExtensionContext(extensionContext)
+            .withNamespace(NAMESPACE)
+            .withWatchingNamespaces(Constants.WATCH_ALL_NAMESPACES)
+            .withOperationTimeout(Constants.CO_OPERATION_TIMEOUT_MEDIUM)
+            .createInstallation()
+            .runInstallation();
     }
 }

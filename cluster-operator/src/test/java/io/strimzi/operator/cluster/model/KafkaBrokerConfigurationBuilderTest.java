@@ -27,6 +27,7 @@ import io.strimzi.api.kafka.model.storage.SingleVolumeStorage;
 import io.strimzi.api.kafka.model.storage.Storage;
 import io.strimzi.kafka.oauth.server.ServerConfig;
 import io.strimzi.operator.cluster.operator.resource.cruisecontrol.CruiseControlConfigurationParameters;
+import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.test.annotations.ParallelSuite;
 import io.strimzi.test.annotations.ParallelTest;
 import org.hamcrest.Description;
@@ -183,8 +184,8 @@ public class KafkaBrokerConfigurationBuilderTest {
     @ParallelTest
     public void testKeycloakAuthorization() {
         CertSecretSource cert = new CertSecretSourceBuilder()
-                .withNewSecretName("my-secret")
-                .withNewCertificate("my.crt")
+                .withSecretName("my-secret")
+                .withCertificate("my.crt")
                 .build();
 
         KafkaAuthorization auth = new KafkaAuthorizationKeycloakBuilder()
@@ -220,8 +221,8 @@ public class KafkaBrokerConfigurationBuilderTest {
     @ParallelTest
     public void testKeycloakAuthorizationWithDefaults() {
         CertSecretSource cert = new CertSecretSourceBuilder()
-                .withNewSecretName("my-secret")
-                .withNewCertificate("my.crt")
+                .withSecretName("my-secret")
+                .withCertificate("my.crt")
                 .build();
 
         KafkaAuthorization auth = new KafkaAuthorizationKeycloakBuilder()
@@ -302,7 +303,7 @@ public class KafkaBrokerConfigurationBuilderTest {
     @ParallelTest
     public void testEmptyUserConfiguration()  {
         Map<String, Object> userConfiguration = new HashMap<>();
-        KafkaConfiguration kafkaConfiguration = new KafkaConfiguration(userConfiguration.entrySet());
+        KafkaConfiguration kafkaConfiguration = new KafkaConfiguration(Reconciliation.DUMMY_RECONCILIATION, userConfiguration.entrySet());
 
         String configuration = new KafkaBrokerConfigurationBuilder()
                 .withUserConfiguration(kafkaConfiguration)
@@ -319,7 +320,7 @@ public class KafkaBrokerConfigurationBuilderTest {
         userConfiguration.put("transaction.state.log.replication.factor", 3);
         userConfiguration.put("transaction.state.log.min.isr", 2);
 
-        KafkaConfiguration kafkaConfiguration = new KafkaConfiguration(userConfiguration.entrySet());
+        KafkaConfiguration kafkaConfiguration = new KafkaConfiguration(Reconciliation.DUMMY_RECONCILIATION, userConfiguration.entrySet());
 
         String configuration = new KafkaBrokerConfigurationBuilder()
                 .withUserConfiguration(kafkaConfiguration)
@@ -334,7 +335,7 @@ public class KafkaBrokerConfigurationBuilderTest {
     @ParallelTest
     public void testEphemeralStorageLogDirs()  {
         Storage storage = new EphemeralStorageBuilder()
-                .withNewSizeLimit("5Gi")
+                .withSizeLimit("5Gi")
                 .build();
 
         String configuration = new KafkaBrokerConfigurationBuilder()
@@ -370,7 +371,7 @@ public class KafkaBrokerConfigurationBuilderTest {
 
         SingleVolumeStorage vol2 = new EphemeralStorageBuilder()
                 .withId(2)
-                .withNewSizeLimit("5Gi")
+                .withSizeLimit("5Gi")
                 .build();
 
         SingleVolumeStorage vol5 = new PersistentClaimStorageBuilder()
@@ -690,9 +691,9 @@ public class KafkaBrokerConfigurationBuilderTest {
                 .withTls(true)
                 .withNewConfiguration()
                     .withNewBrokerCertChainAndKey()
-                        .withNewSecretName("my-secret")
-                        .withNewKey("my.key")
-                        .withNewCertificate("my.crt")
+                        .withSecretName("my-secret")
+                        .withKey("my.key")
+                        .withCertificate("my.crt")
                     .endBrokerCertChainAndKey()
                 .endConfiguration()
                 .build();
@@ -863,9 +864,9 @@ public class KafkaBrokerConfigurationBuilderTest {
                 .withTls(true)
                 .withNewConfiguration()
                     .withNewBrokerCertChainAndKey()
-                        .withNewSecretName("my-secret")
-                        .withNewKey("my.key")
-                        .withNewCertificate("my.crt")
+                        .withSecretName("my-secret")
+                        .withKey("my.key")
+                        .withCertificate("my.crt")
                     .endBrokerCertChainAndKey()
                 .endConfiguration()
                 .build();
@@ -1199,8 +1200,8 @@ public class KafkaBrokerConfigurationBuilderTest {
     @ParallelTest
     public void testOauthConfigurationWithTlsConfig()  {
         CertSecretSource cert = new CertSecretSourceBuilder()
-                .withNewSecretName("my-secret")
-                .withNewCertificate("my.crt")
+                .withSecretName("my-secret")
+                .withCertificate("my.crt")
                 .build();
 
         GenericKafkaListener listener = new GenericKafkaListenerBuilder()
@@ -1257,13 +1258,13 @@ public class KafkaBrokerConfigurationBuilderTest {
                 .withType(KafkaListenerType.INTERNAL)
                 .withTls(false)
                 .withNewKafkaListenerAuthenticationOAuth()
-                    .withNewValidIssuerUri("https://valid-issuer")
-                    .withNewIntrospectionEndpointUri("https://intro")
+                    .withValidIssuerUri("https://valid-issuer")
+                    .withIntrospectionEndpointUri("https://intro")
                     .withCheckAudience(true)
                     .withCustomClaimCheck("'kafka-user' in @.roles.client-roles.kafka")
                     .withNewClientId("my-oauth-client")
                     .withNewClientSecret()
-                        .withNewSecretName("my-secret")
+                        .withSecretName("my-secret")
                         .withKey("client-secret")
                     .endClientSecret()
                 .endKafkaListenerAuthenticationOAuth()

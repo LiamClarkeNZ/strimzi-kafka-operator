@@ -13,6 +13,7 @@ import io.strimzi.api.kafka.model.listener.arraylistener.KafkaListenerType;
 import io.strimzi.api.kafka.model.status.Condition;
 import io.strimzi.systemtest.AbstractST;
 import io.strimzi.systemtest.Constants;
+import io.strimzi.systemtest.SetupClusterOperator;
 import io.strimzi.systemtest.annotations.ParallelNamespaceTest;
 import io.strimzi.systemtest.annotations.ParallelTest;
 import io.strimzi.systemtest.kafkaclients.internalClients.InternalKafkaClient;
@@ -219,9 +220,10 @@ class UserST extends AbstractST {
         Integer prodRate = 1111;
         Integer consRate = 2222;
         Integer reqPerc = 42;
+        Double mutRate = 10d;
 
         // Create user with correct name
-        resourceManager.createResource(extensionContext, KafkaUserTemplates.userWithQuotas(user, prodRate, consRate, reqPerc)
+        resourceManager.createResource(extensionContext, KafkaUserTemplates.userWithQuotas(user, prodRate, consRate, reqPerc, mutRate)
             .editMetadata()
                 .withNamespace(NAMESPACE)
             .endMetadata()
@@ -235,6 +237,7 @@ class UserST extends AbstractST {
         assertThat(result.out().contains("request_percentage=" + reqPerc), is(true));
         assertThat(result.out().contains("producer_byte_rate=" + prodRate), is(true));
         assertThat(result.out().contains("consumer_byte_rate=" + consRate), is(true));
+        assertThat(result.out().contains("controller_mutation_rate=" + mutRate), is(true));
 
         // delete user
         KafkaUserResource.kafkaUserClient().inNamespace(NAMESPACE).withName(user.getMetadata().getName()).delete();
@@ -245,6 +248,7 @@ class UserST extends AbstractST {
         assertThat(resultAfterDelete.out(), not(containsString("request_percentage")));
         assertThat(resultAfterDelete.out(), not(containsString("producer_byte_rate")));
         assertThat(resultAfterDelete.out(), not(containsString("consumer_byte_rate")));
+        assertThat(resultAfterDelete.out(), not(containsString("controller_mutation_rate")));
     }
 
     @ParallelNamespaceTest
@@ -391,7 +395,12 @@ class UserST extends AbstractST {
 
     @BeforeAll
     void setup(ExtensionContext extensionContext) {
-        installClusterWideClusterOperator(extensionContext, NAMESPACE, Constants.CO_OPERATION_TIMEOUT_DEFAULT, Constants.RECONCILIATION_INTERVAL);
+        install = new SetupClusterOperator.SetupClusterOperatorBuilder()
+            .withExtensionContext(extensionContext)
+            .withNamespace(NAMESPACE)
+            .withWatchingNamespaces(Constants.WATCH_ALL_NAMESPACES)
+            .createInstallation()
+            .runInstallation();
 
         resourceManager.createResource(extensionContext, KafkaTemplates.kafkaEphemeral(userClusterName, 1, 1).build());
     }

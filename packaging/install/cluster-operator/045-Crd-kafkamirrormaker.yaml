@@ -479,10 +479,18 @@ spec:
                 type: string
                 description: List of topics which are included for mirroring. This
                   option allows any regular expression using Java-style regular expressions.
-                  Mirroring two topics named A and B is achieved by using the whitelist
+                  Mirroring two topics named A and B is achieved by using the expression
                   `'A\|B'`. Or, as a special case, you can mirror all topics using
-                  the whitelist '*'. You can also specify multiple regular expressions
-                  separated by commas.
+                  the regular expression '*'. You can also specify multiple regular
+                  expressions separated by commas.
+              include:
+                type: string
+                description: List of topics which are included for mirroring. This
+                  option allows any regular expression using Java-style regular expressions.
+                  Mirroring two topics named A and B is achieved by using the expression
+                  `'A\|B'`. Or, as a special case, you can mirror all topics using
+                  the regular expression '*'. You can also specify multiple regular
+                  expressions separated by commas.
               jvmOptions:
                 type: object
                 properties:
@@ -827,6 +835,25 @@ spec:
                                             matchLabels:
                                               x-kubernetes-preserve-unknown-fields: true
                                               type: object
+                                        namespaceSelector:
+                                          type: object
+                                          properties:
+                                            matchExpressions:
+                                              type: array
+                                              items:
+                                                type: object
+                                                properties:
+                                                  key:
+                                                    type: string
+                                                  operator:
+                                                    type: string
+                                                  values:
+                                                    type: array
+                                                    items:
+                                                      type: string
+                                            matchLabels:
+                                              x-kubernetes-preserve-unknown-fields: true
+                                              type: object
                                         namespaces:
                                           type: array
                                           items:
@@ -841,6 +868,25 @@ spec:
                                   type: object
                                   properties:
                                     labelSelector:
+                                      type: object
+                                      properties:
+                                        matchExpressions:
+                                          type: array
+                                          items:
+                                            type: object
+                                            properties:
+                                              key:
+                                                type: string
+                                              operator:
+                                                type: string
+                                              values:
+                                                type: array
+                                                items:
+                                                  type: string
+                                        matchLabels:
+                                          x-kubernetes-preserve-unknown-fields: true
+                                          type: object
+                                    namespaceSelector:
                                       type: object
                                       properties:
                                         matchExpressions:
@@ -895,6 +941,25 @@ spec:
                                             matchLabels:
                                               x-kubernetes-preserve-unknown-fields: true
                                               type: object
+                                        namespaceSelector:
+                                          type: object
+                                          properties:
+                                            matchExpressions:
+                                              type: array
+                                              items:
+                                                type: object
+                                                properties:
+                                                  key:
+                                                    type: string
+                                                  operator:
+                                                    type: string
+                                                  values:
+                                                    type: array
+                                                    items:
+                                                      type: string
+                                            matchLabels:
+                                              x-kubernetes-preserve-unknown-fields: true
+                                              type: object
                                         namespaces:
                                           type: array
                                           items:
@@ -909,6 +974,25 @@ spec:
                                   type: object
                                   properties:
                                     labelSelector:
+                                      type: object
+                                      properties:
+                                        matchExpressions:
+                                          type: array
+                                          items:
+                                            type: object
+                                            properties:
+                                              key:
+                                                type: string
+                                              operator:
+                                                type: string
+                                              values:
+                                                type: array
+                                                items:
+                                                  type: string
+                                        matchLabels:
+                                          x-kubernetes-preserve-unknown-fields: true
+                                          type: object
+                                    namespaceSelector:
                                       type: object
                                       properties:
                                         matchExpressions:
@@ -1195,11 +1279,19 @@ spec:
                     description: The timeout for each attempted health check. Default
                       to 5 seconds. Minimum value is 1.
                 description: Pod readiness checking.
+            oneOf:
+            - properties:
+                whitelist: {}
+              required:
+              - whitelist
+            - properties:
+                include: {}
+              required:
+              - include
             required:
             - replicas
             - consumer
             - producer
-            - whitelist
             description: The specification of Kafka MirrorMaker.
           status:
             type: object

@@ -133,9 +133,9 @@ public class KafkaTopicUtils {
      * @param topicName name of KafkaTopic
      * @param state desired state
      */
-    public static boolean waitForKafkaTopicStatus(String namespaceName, String topicName, Enum<?>  state) {
-        KafkaTopic kafkaTopic = KafkaTopicResource.kafkaTopicClient().inNamespace(namespaceName).withName(topicName).get();
-        return ResourceManager.waitForResourceStatus(KafkaTopicResource.kafkaTopicClient(), kafkaTopic, state);
+    public static boolean waitForKafkaTopicStatus(String namespaceName, String topicName, Enum<?> state) {
+        return ResourceManager.waitForResourceStatus(KafkaTopicResource.kafkaTopicClient(), KafkaTopic.RESOURCE_KIND,
+            namespaceName, topicName, state, ResourceOperation.getTimeoutForResourceReadiness(KafkaTopic.RESOURCE_KIND));
     }
 
     public static boolean waitForKafkaTopicReady(String namespaceName, String topicName) {
@@ -163,8 +163,7 @@ public class KafkaTopicUtils {
     }
 
     public static String describeTopicViaKafkaPod(String topicName, String kafkaPodName, String bootstrapServer) {
-        return cmdKubeClient().execInPod(kafkaPodName, "/bin/bash -c",
-            ".bin/kafka-topics.sh",
+        return cmdKubeClient().execInPod(kafkaPodName, "/opt/kafka/bin/kafka-topics.sh",
             "--topic",
             topicName,
             "--describe",

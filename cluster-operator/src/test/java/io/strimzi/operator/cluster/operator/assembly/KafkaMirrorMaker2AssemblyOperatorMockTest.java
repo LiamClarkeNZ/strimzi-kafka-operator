@@ -137,7 +137,7 @@ public class KafkaMirrorMaker2AssemblyOperatorMockTest {
                     assertThat(mockClient.apps().deployments().inNamespace(NAMESPACE).withName(KafkaMirrorMaker2Resources.deploymentName(CLUSTER_NAME)).get(), is(notNullValue()));
                     assertThat(mockClient.configMaps().inNamespace(NAMESPACE).withName(KafkaMirrorMaker2Resources.metricsAndLogConfigMapName(CLUSTER_NAME)).get(), is(notNullValue()));
                     assertThat(mockClient.services().inNamespace(NAMESPACE).withName(KafkaMirrorMaker2Resources.serviceName(CLUSTER_NAME)).get(), is(notNullValue()));
-                    assertThat(mockClient.policy().podDisruptionBudget().inNamespace(NAMESPACE).withName(KafkaMirrorMaker2Resources.deploymentName(CLUSTER_NAME)).get(), is(notNullValue()));
+                    assertThat(mockClient.policy().v1beta1().podDisruptionBudget().inNamespace(NAMESPACE).withName(KafkaMirrorMaker2Resources.deploymentName(CLUSTER_NAME)).get(), is(notNullValue()));
                 } else {
                     assertThat(mockClient.apps().deployments().inNamespace(NAMESPACE).withName(KafkaMirrorMaker2Resources.deploymentName(CLUSTER_NAME)).get(), is(nullValue()));
                     verify(mockClient, never()).customResources(KafkaMirrorMaker2.class);
@@ -163,7 +163,7 @@ public class KafkaMirrorMaker2AssemblyOperatorMockTest {
             .build());
         KafkaConnectApi mock = mock(KafkaConnectApi.class);
         when(mock.list(anyString(), anyInt())).thenReturn(Future.succeededFuture(emptyList()));
-        when(mock.updateConnectLoggers(anyString(), anyInt(), anyString(), any(OrderedProperties.class))).thenReturn(Future.succeededFuture());
+        when(mock.updateConnectLoggers(any(), anyString(), anyInt(), anyString(), any(OrderedProperties.class))).thenReturn(Future.succeededFuture());
 
         Checkpoint async = context.checkpoint();
         createMirrorMaker2Cluster(context, mock, false)
@@ -190,7 +190,7 @@ public class KafkaMirrorMaker2AssemblyOperatorMockTest {
                 .build());
         KafkaConnectApi mock = mock(KafkaConnectApi.class);
         when(mock.list(anyString(), anyInt())).thenReturn(Future.succeededFuture(emptyList()));
-        when(mock.updateConnectLoggers(anyString(), anyInt(), anyString(), any(OrderedProperties.class))).thenReturn(Future.succeededFuture());
+        when(mock.updateConnectLoggers(any(), anyString(), anyInt(), anyString(), any(OrderedProperties.class))).thenReturn(Future.succeededFuture());
 
         Checkpoint async = context.checkpoint();
         createMirrorMaker2Cluster(context, mock, true)

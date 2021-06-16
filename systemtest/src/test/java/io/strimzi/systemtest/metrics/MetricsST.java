@@ -26,6 +26,7 @@ import io.strimzi.api.kafka.model.KafkaRebalance;
 import io.strimzi.api.kafka.model.KafkaResources;
 import io.strimzi.systemtest.AbstractST;
 import io.strimzi.systemtest.Constants;
+import io.strimzi.systemtest.SetupClusterOperator;
 import io.strimzi.systemtest.annotations.IsolatedTest;
 import io.strimzi.systemtest.annotations.ParallelTest;
 import io.strimzi.systemtest.kafkaclients.internalClients.InternalKafkaClient;
@@ -411,7 +412,7 @@ public class MetricsST extends AbstractST {
     @Tag(CRUISE_CONTROL)
     void testCruiseControlMetrics() {
 
-        String cruiseControlMetrics = CruiseControlUtils.callApi(CruiseControlUtils.SupportedHttpMethods.GET, "/metrics");
+        String cruiseControlMetrics = CruiseControlUtils.callApi(FIRST_NAMESPACE, CruiseControlUtils.SupportedHttpMethods.GET, "/metrics");
 
         Matcher regex = Pattern.compile("^([^#].*)\\s+([^\\s]*)$", Pattern.MULTILINE).matcher(cruiseControlMetrics);
 
@@ -604,7 +605,12 @@ public class MetricsST extends AbstractST {
     @BeforeAll
     void setupEnvironment(ExtensionContext extensionContext) throws Exception {
         LOGGER.info("Setting up Environment for MetricsST");
-        installClusterWideClusterOperator(extensionContext, FIRST_NAMESPACE, Constants.CO_OPERATION_TIMEOUT_DEFAULT, Constants.RECONCILIATION_INTERVAL);
+        install = new SetupClusterOperator.SetupClusterOperatorBuilder()
+            .withExtensionContext(extensionContext)
+            .withNamespace(FIRST_NAMESPACE)
+            .withWatchingNamespaces(Constants.WATCH_ALL_NAMESPACES)
+            .createInstallation()
+            .runInstallation();
 
         cluster.createNamespace(SECOND_NAMESPACE);
         NetworkPolicyResource.applyDefaultNetworkPolicySettings(extensionContext, Collections.singletonList(SECOND_NAMESPACE));

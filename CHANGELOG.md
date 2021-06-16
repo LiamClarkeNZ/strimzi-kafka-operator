@@ -2,13 +2,26 @@
 
 ## 0.24.0
 
+* Add support for [Kubernetes Configuration Provider for Apache Kafka](https://github.com/strimzi/kafka-kubernetes-config-provider)
 * Use Red Hat UBI8 base image
 * Add support for Kafka 2.7.1 and remove support for 2.6.0, 2.6.1, and 2.6.2
 * Support for patching of service accounts and configuring their labels and annotations. The feature is disabled by default and enabled using the new `ServiceAccountPatching` feature gate.
 * Added support for configuring cluster-operator's worker thread pool size that is used for various sync and async tasks
 * Add Kafka Quotas plugin with produce, consume, and storage quotas
-* Remove topics and groups "blacklist" pattern from KafkaMirrorMaker2 CRD
 * Support pausing reconciliation of KafkaTopic CR with annotation `strimzi.io/pause-reconciliation`
+* Update cruise control to 2.5.55
+* Update to Strimzi Kafka Bridge to 0.20.0
+* Support for broker load information added to the rebalance optimization proposal. Information on the load difference, before and after a rebalance is stored in a ConfigMap
+* Add support for selectively changing the verbosity of logging for individual CRs, using markers.
+* Added support for `controller_mutation_rate' quota. Creation/Deletion of topics and creation of partitions can be configured through this.
+
+### Changes, deprecations and removals
+
+* The fields `topicsBlacklistPattern` and `groupsBlacklistPattern` in the `KafkaMirrorMaker2` resource are deprecated and will be removed in the future.
+  They are replaced by new fields `topicsExcludePattern` and `groupsExcludePattern`.
+* The field `whitelist` in the `KafkaMirrorMaker` resource is deprecated and will be removed in the future.
+  It is replaced with a new field `include`.
+* `bind-utils` removed from containers to improve security posture.
 
 ## 0.23.0
 
@@ -63,7 +76,7 @@
 * In the past, when no Ingress class was specified in the Ingress-type listener in the Kafka custom resource, the 
   `kubernetes.io/ingress.class` annotation was automatically set to `nginx`. Because of the support for the new 
   IngressClass resource and the new `ingressClassName` field in the Ingress resource, the default value will not be set 
-  anymore. Please use the `class` field in `.spec.kafka.listeners[].configuration` to specify the class name. 
+  anymore. Please use the `class` field in `.spec.kafka.listeners[].configuration` to specify the class name.
 * The `KafkaConnectS2I` custom resource is deprecated and will be removed in the future. You can use the new [`KafkaConnect` build feature](https://strimzi.io/docs/operators/latest/full/deploying.html#creating-new-image-using-kafka-connect-build-str) instead.
 * Removed support for Helm2 charts as that version is now unsupported. There is no longer the need for separate `helm2` and `helm3` binaries, only `helm` (version 3) is required.
 * The following annotations are deprecated for a long time and will be removed in 0.23.0:
