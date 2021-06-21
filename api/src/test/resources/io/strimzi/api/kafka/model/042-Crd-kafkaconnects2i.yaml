@@ -111,6 +111,13 @@ spec:
                     description: Configure whether access token should be treated
                       as JWT. This should be set to `false` if the authorization server
                       returns opaque tokens. Defaults to `true`.
+                  audience:
+                    type: string
+                    description: OAuth audience to use when authenticating against
+                      the authorization server. Some authorization servers require
+                      the audience to be explicitly set. The possible values depend
+                      on how the authorization server is configured. By default, `audience`
+                      is not specified when performing the token endpoint request.
                   certificateAndKey:
                     type: object
                     properties:
@@ -1754,8 +1761,8 @@ spec:
                       required:
                       - name
                       - valueFrom
-                    description: Allows to pass data from Secret or ConfigMap to the
-                      Kafka Connect pods as environment variables.
+                    description: Makes data from a Secret or ConfigMap available in
+                      the Kafka Connect pods as environment variables.
                   volumes:
                     type: array
                     items:
@@ -1811,8 +1818,8 @@ spec:
                             Secret or ConfigMap has to be specified.
                       required:
                       - name
-                    description: Allows to pass data from Secret or ConfigMap to the
-                      Kafka Connect pods as volumes.
+                    description: Makes data from a Secret or ConfigMap available in
+                      the Kafka Connect pods as volumes.
                 description: Pass data from Secrets or ConfigMaps to the Kafka Connect
                   pods and use them to configure connectors.
               build:
@@ -1883,6 +1890,10 @@ spec:
                           items:
                             type: object
                             properties:
+                              fileName:
+                                type: string
+                                description: Name under which the artifact will be
+                                  stored.
                               sha512sum:
                                 type: string
                                 description: SHA512 checksum of the artifact. Optional.
@@ -1895,6 +1906,7 @@ spec:
                                 - jar
                                 - tgz
                                 - zip
+                                - other
                                 description: Artifact type. Currently, the supported
                                   artifact types are `tgz`, `jar`, and `zip`.
                               url:
@@ -2119,6 +2131,13 @@ spec:
                     description: Configure whether access token should be treated
                       as JWT. This should be set to `false` if the authorization server
                       returns opaque tokens. Defaults to `true`.
+                  audience:
+                    type: string
+                    description: OAuth audience to use when authenticating against
+                      the authorization server. Some authorization servers require
+                      the audience to be explicitly set. The possible values depend
+                      on how the authorization server is configured. By default, `audience`
+                      is not specified when performing the token endpoint request.
                   certificateAndKey:
                     type: object
                     properties:
@@ -4041,8 +4060,8 @@ spec:
                       required:
                       - name
                       - valueFrom
-                    description: Allows to pass data from Secret or ConfigMap to the
-                      Kafka Connect pods as environment variables.
+                    description: Makes data from a Secret or ConfigMap available in
+                      the Kafka Connect pods as environment variables.
                   volumes:
                     type: array
                     items:
@@ -4098,8 +4117,8 @@ spec:
                             Secret or ConfigMap has to be specified.
                       required:
                       - name
-                    description: Allows to pass data from Secret or ConfigMap to the
-                      Kafka Connect pods as volumes.
+                    description: Makes data from a Secret or ConfigMap available in
+                      the Kafka Connect pods as volumes.
                 description: Pass data from Secrets or ConfigMaps to the Kafka Connect
                   pods and use them to configure connectors.
               build:
@@ -4170,6 +4189,10 @@ spec:
                           items:
                             type: object
                             properties:
+                              fileName:
+                                type: string
+                                description: Name under which the artifact will be
+                                  stored.
                               sha512sum:
                                 type: string
                                 description: SHA512 checksum of the artifact. Optional.
@@ -4182,6 +4205,7 @@ spec:
                                 - jar
                                 - tgz
                                 - zip
+                                - other
                                 description: Artifact type. Currently, the supported
                                   artifact types are `tgz`, `jar`, and `zip`.
                               url:
@@ -4406,6 +4430,13 @@ spec:
                     description: Configure whether access token should be treated
                       as JWT. This should be set to `false` if the authorization server
                       returns opaque tokens. Defaults to `true`.
+                  audience:
+                    type: string
+                    description: OAuth audience to use when authenticating against
+                      the authorization server. Some authorization servers require
+                      the audience to be explicitly set. The possible values depend
+                      on how the authorization server is configured. By default, `audience`
+                      is not specified when performing the token endpoint request.
                   certificateAndKey:
                     type: object
                     properties:
@@ -6328,8 +6359,8 @@ spec:
                       required:
                       - name
                       - valueFrom
-                    description: Allows to pass data from Secret or ConfigMap to the
-                      Kafka Connect pods as environment variables.
+                    description: Makes data from a Secret or ConfigMap available in
+                      the Kafka Connect pods as environment variables.
                   volumes:
                     type: array
                     items:
@@ -6385,8 +6416,8 @@ spec:
                             Secret or ConfigMap has to be specified.
                       required:
                       - name
-                    description: Allows to pass data from Secret or ConfigMap to the
-                      Kafka Connect pods as volumes.
+                    description: Makes data from a Secret or ConfigMap available in
+                      the Kafka Connect pods as volumes.
                 description: Pass data from Secrets or ConfigMaps to the Kafka Connect
                   pods and use them to configure connectors.
               build:
@@ -6457,6 +6488,10 @@ spec:
                           items:
                             type: object
                             properties:
+                              fileName:
+                                type: string
+                                description: Name under which the artifact will be
+                                  stored.
                               sha512sum:
                                 type: string
                                 description: SHA512 checksum of the artifact. Optional.
@@ -6469,6 +6504,7 @@ spec:
                                 - jar
                                 - tgz
                                 - zip
+                                - other
                                 description: Artifact type. Currently, the supported
                                   artifact types are `tgz`, `jar`, and `zip`.
                               url:
