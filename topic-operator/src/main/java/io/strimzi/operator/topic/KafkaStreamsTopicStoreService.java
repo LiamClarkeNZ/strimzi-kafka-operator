@@ -16,8 +16,11 @@ import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KafkaStreams;
+import org.apache.kafka.streams.StoreQueryParameters;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.Topology;
+import org.apache.kafka.streams.state.QueryableStoreTypes;
+import org.apache.kafka.streams.state.ReadOnlyKeyValueStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,10 +45,30 @@ public class KafkaStreamsTopicStoreService {
 
     /* test */ KafkaStreams streams;
     /* test */ TopicStore store;
+    private String queryableStoreName;
+
+    static class ServiceyStuffWrapper {
+        private final AsyncBiFunctionService.WithSerdes<String, String, Integer> serviceImpl;
+        private final String queryableStoreName;
+
+        ServiceyStuffWrapper(AsyncBiFunctionService.WithSerdes<String, String, Integer> serviceImpl, String queryableStoreName) {
+
+            this.serviceImpl = serviceImpl;
+            this.queryableStoreName = queryableStoreName;
+        }
+
+        public AsyncBiFunctionService.WithSerdes<String, String, Integer> getServiceImpl() {
+            return serviceImpl;
+        }
+
+        public String getQueryableStoreName() {
+            return queryableStoreName;
+        }
+    }
 
     public CompletionStage<TopicStore> start(Config config, Properties kafkaProperties) {
-        String storeTopic = config.get(Config.STORE_TOPIC);
-        String storeName = config.get(Config.STORE_NAME);
+        String inputTopic = config.get(Config.STORE_TOPIC);
+        String storeTopic = config.get(Config.STORE_NAME);
 
         // check if entry topic has the right configuration
         Admin admin = Admin.create(kafkaProperties);
@@ -53,15 +76,17 @@ public class KafkaStreamsTopicStoreService {
         return toCS(admin.describeCluster().nodes())
                 .thenApply(nodes -> new Context(nodes.size()))
                 .thenCompose(c -> toCS(admin.listTopics().names()).thenApply(c::setTopics))
-                .thenCompose(c -> {
-                    if (c.topics.contains(storeTopic)) {
-                        return validateExistingStoreTopic(storeTopic, admin, c);
+                .thenApply(c -> {
+                    if (c.topics.contains(inputTopic)) {
+                        validateExistingStoreTopic(inputTopic, admin, c);
                     } else {
-                        return createNewStoreTopic(storeTopic, admin, c);
+                        createTopic(inputTopic, admin, c);
                     }
+                    return c;
                 })
-                .thenCompose(v -> createKafkaStreams(config, kafkaProperties, storeTopic, storeName))
-                .thenApply(serviceImpl -> createKafkaTopicStore(config, kafkaProperties, storeTopic, serviceImpl))
+                .thenApply(c -> createTopic(storeTopic, admin, c))
+                .thenCompose(v -> createKafkaStreams(config, kafkaProperties, inputTopic, storeTopic))
+                .thenApply(serviceWrapper -> createKafkaTopicStore(config, kafkaProperties, inputTopic, serviceWrapper))
                 .whenCompleteAsync((v, t) -> {
                     // use another thread to stop, if needed
                     try {
@@ -77,7 +102,7 @@ public class KafkaStreamsTopicStoreService {
                 });
     }
 
-    private TopicStore createKafkaTopicStore(Config config, Properties kafkaProperties, String storeTopic, AsyncBiFunctionService.WithSerdes<String, String, Integer> serviceImpl) {
+    private TopicStore createKafkaTopicStore(Config config, Properties kafkaProperties, String storeTopic, ServiceyStuffWrapper serviceWrapper) {
         LOGGER.info("Creating topic store ...");
         ProducerActions<String, TopicCommand> producer = new AsyncProducer<>(
                 kafkaProperties,
@@ -86,25 +111,25 @@ public class KafkaStreamsTopicStoreService {
         );
         closeables.add(producer);
 
-        StoreAndServiceFactory factory = new LocalStoreAndServiceFactory();
-        StoreAndServiceFactory.StoreContext sc = factory.create(config, kafkaProperties, streams, serviceImpl, closeables);
+        StoreQueryParameters<ReadOnlyKeyValueStore<String, Topic>> storeQueryParameters = StoreQueryParameters.fromNameAndType(config.get(Config.STORE_NAME), QueryableStoreTypes.keyValueStore());
+        ReadOnlyKeyValueStore<String, Topic> store = streams.store(storeQueryParameters.enableStaleStores());
 
-        this.store = new KafkaStreamsTopicStore(sc.getStore(), storeTopic, producer, sc.getService());
+        this.store = new KafkaStreamsTopicStore(store, storeTopic, producer, serviceWrapper.getServiceImpl());
         return this.store;
     }
 
-    private CompletableFuture<AsyncBiFunctionService.WithSerdes<String, String, Integer>> createKafkaStreams(Config config, Properties kafkaProperties, String storeTopic, String storeName) {
-        LOGGER.info("Creating Kafka Streams, store name: {}", storeName);
+    private CompletableFuture<ServiceyStuffWrapper> createKafkaStreams(Config config, Properties kafkaProperties, String inputTopic, String storeTopic) {
+        LOGGER.info("Creating Kafka Streams, store name: {}", storeTopic);
         long timeoutMillis = config.get(Config.STALE_RESULT_TIMEOUT_MS);
         ForeachActionDispatcher<String, Integer> dispatcher = new ForeachActionDispatcher<>();
         WaitForResultService serviceImpl = new WaitForResultService(timeoutMillis, dispatcher);
         closeables.add(serviceImpl);
 
         AtomicBoolean done = new AtomicBoolean(false); // no need for dup complete
-        CompletableFuture<AsyncBiFunctionService.WithSerdes<String, String, Integer>> cf = new CompletableFuture<>();
+        CompletableFuture<ServiceyStuffWrapper> cf = new CompletableFuture<>();
         KafkaStreams.StateListener listener = (newState, oldState) -> {
             if (newState == KafkaStreams.State.RUNNING && !done.getAndSet(true)) {
-                cf.completeAsync(() -> serviceImpl); // complete in a different thread
+                cf.completeAsync(() -> new ServiceyStuffWrapper(serviceImpl, queryableStoreName)); // complete in a different thread
             }
             if (newState == KafkaStreams.State.ERROR) {
                 cf.completeExceptionally(new IllegalStateException("KafkaStreams error"));
@@ -120,7 +145,8 @@ public class KafkaStreamsTopicStoreService {
             streamsProperties.put(StreamsConfig.REPLICATION_FACTOR_CONFIG, "-1");
         }
 
-        Topology topology = new TopicStoreTopologyProvider(storeTopic, storeName, streamsProperties, dispatcher).get();
+        TopicStoreTopologyProvider topicStoreTopologyProvider = new TopicStoreTopologyProvider(inputTopic, storeTopic, streamsProperties, dispatcher);
+        Topology topology = topicStoreTopologyProvider.get();
 
         streams = new KafkaStreams(topology, streamsProperties);
         streams.setStateListener(listener);
@@ -131,30 +157,30 @@ public class KafkaStreamsTopicStoreService {
         return cf;
     }
 
-    private CompletionStage<Void> createNewStoreTopic(String storeTopic, Admin admin, Context c) {
-        LOGGER.info("Creating new store topic: {}", storeTopic);
+    private CompletionStage<Void> createTopic(String topic, Admin admin, Context c) {
+        LOGGER.info("Creating new topic: {}", topic);
         int rf = Math.min(3, c.clusterSize);
         int minISR = Math.max(rf - 1, 1);
-        NewTopic newTopic = new NewTopic(storeTopic, 1, (short) rf)
+        NewTopic newTopic = new NewTopic(topic, 1, (short) rf)
             .configs(Collections.singletonMap(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, String.valueOf(minISR)));
         return toCS(admin.createTopics(Collections.singleton(newTopic)).all());
     }
 
-    private CompletionStage<Void> validateExistingStoreTopic(String storeTopic, Admin admin, Context c) {
+    private void validateExistingStoreTopic(String storeTopic, Admin admin, Context c) {
         LOGGER.info("Validating existing store topic: {}", storeTopic);
         ConfigResource storeTopicConfigResource = new ConfigResource(ConfigResource.Type.TOPIC, storeTopic);
-        return toCS(admin.describeTopics(Collections.singleton(storeTopic)).topicNameValues().get(storeTopic))
-            .thenApply(td -> c.setRf(td.partitions().stream().map(tp -> tp.replicas().size()).min(Integer::compare).orElseThrow()))
-            .thenCompose(c2 -> toCS(admin.describeConfigs(Collections.singleton(storeTopicConfigResource)).values().get(storeTopicConfigResource))
-                    .thenApply(cr -> c2.setMinISR(parseInt(cr.get(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG).value()))))
-            .thenApply(c3 -> {
-                if (c3.rf != Math.min(3, c3.clusterSize) || c3.minISR != c3.rf - 1) {
-                    LOGGER.warn("Durability of the topic [{}] is not sufficient for production use - replicationFactor: {}, {}: {}. " +
-                            "Increase the replication factor to at least 3 and configure the {} to {}.",
-                            storeTopic, c3.rf, TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, c3.minISR, TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, c3.minISR);
-                }
-                return null;
-            });
+        toCS(admin.describeTopics(Collections.singleton(storeTopic)).topicNameValues().get(storeTopic))
+                .thenApply(td -> c.setRf(td.partitions().stream().map(tp -> tp.replicas().size()).min(Integer::compare).orElseThrow()))
+                .thenCompose(c2 -> toCS(admin.describeConfigs(Collections.singleton(storeTopicConfigResource)).values().get(storeTopicConfigResource))
+                        .thenApply(cr -> c2.setMinISR(parseInt(cr.get(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG).value()))))
+                .thenApply(c3 -> {
+                    if (c3.rf != Math.min(3, c3.clusterSize) || c3.minISR != c3.rf - 1) {
+                        LOGGER.warn("Durability of the topic [{}] is not sufficient for production use - replicationFactor: {}, {}: {}. " +
+                                        "Increase the replication factor to at least 3 and configure the {} to {}.",
+                                storeTopic, c3.rf, TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, c3.minISR, TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, c3.minISR);
+                    }
+                    return null;
+                });
     }
 
     public void stop() {
