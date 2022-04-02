@@ -1,0 +1,14 @@
+quarkus:
+    test:
+      only-test-application-module: true
+      include-pattern: StuffWorks
+  micrometer:
+    binder:
+      jvm: true
+      vertx:
+        enabled: true
+    export:
+      prometheus:
+        enabled: true
+
+

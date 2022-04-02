@@ -162,6 +162,7 @@
         <module>config-model-generator</module>
         <module>operator-common</module>
         <module>topic-operator</module>
+        <module>topic-operator-electric-boogaloo</module>
         <module>cluster-operator</module>
         <module>user-operator</module>
         <module>kafka-init</module>
